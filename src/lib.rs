@@ -1,10 +1,6 @@
 #![feature(type_changing_struct_update)]
 #![feature(sort_floats)]
 #![no_std]
-// #![allow(unused)]
-
-use defmt::*;
-use defmt_rtt as _;
 
 use core::marker::PhantomData;
 
