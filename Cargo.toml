@@ -1,0 +1,11 @@
+[package]
+name = "icm20948-async"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+embedded-hal-async = "0.2.0-alpha.0"
+embassy-time = { path = "../../embassy/embassy-time" } # git clone embassy repo
+nalgebra = {version = "*", default-features = false, features = ["libm"]}
