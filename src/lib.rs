@@ -14,6 +14,7 @@ const ICM20948_ADDR: u8 = 0x69; // I2C address of the ICM20948
 const MAGNET_ADDR: u8 = 0x0C; // I2C address of magnetometer
 
 #[derive(Clone, Copy)]
+/// Container for accelerometer and gyroscope measurements
 pub struct Data6Dof {
     pub acc: Vector3<f32>,
     pub gyr: Vector3<f32>,
@@ -21,6 +22,7 @@ pub struct Data6Dof {
 }
 
 #[derive(Clone, Copy)]
+/// Container for accelerometer, gyroscope and magnetometer measurements
 pub struct Data9Dof {
     pub acc: Vector3<f32>,
     pub gyr: Vector3<f32>,
@@ -77,29 +79,37 @@ where
         Configuration methods
     */
 
+    /// Set I2C address of ICM module. Default is 0x68, alternative is 0x69
     pub fn set_address(self, addr: u8) -> Icm20948<I2C, MagDisabled, NotInit> {
         Icm20948 { addr, ..self }
     }
 
+    /// Set accelerometer measuring range, choises are 2G, 4G, 8G or 16G
     pub fn acc_range(self, acc_range: AccelerometerRange) -> Icm20948<I2C, MagDisabled, NotInit> {
         Icm20948 { config: Icm20948Config { acc_range, ..self.config }, ..self }
     }
 
+    /// Set accelerometer digital lowpass filter frequency
     pub fn acc_dlp(self, acc_dlp: AccelerometerDlp) -> Icm20948<I2C, MagDisabled, NotInit> {
         Icm20948 { config: Icm20948Config { acc_dlp: Some(acc_dlp), ..self.config },..self }
     }
 
+    /// Set returned unit of accelerometer measurement, choises are Gs or m/s^2
     pub fn acc_unit(self, acc_unit: AccelerometerUnit) -> Icm20948<I2C, MagDisabled, NotInit> {
         Icm20948 { config: Icm20948Config { acc_unit, ..self.config }, ..self }
     }
+
+    /// Set gyroscope measuring range, choises are 250Dps, 500Dps, 1000Dps and 2000Dps
     pub fn gyro_range(self, gyro_range: GyroscopeRange) -> Icm20948<I2C, MagDisabled, NotInit> {
         Icm20948 { config: Icm20948Config { gyro_range, ..self.config }, ..self }
     }
 
+    /// Set gyroscope digital low pass filter frequency
     pub fn gyro_dlp(self, gyro_dlp: GyroscopeDlp) -> Icm20948<I2C, MagDisabled, NotInit> {
         Icm20948 { config: Icm20948Config { gyro_dlp: Some(gyro_dlp), ..self.config }, ..self }
     }
 
+    /// Set returned unit of gyroscope measurement, choises are degrees/s or radians/s
     pub fn gyro_unit(self, gyro_unit: GyroscopeUnit) -> Icm20948<I2C, MagDisabled, NotInit> {
         Icm20948 { config: Icm20948Config { gyro_unit, ..self.config }, ..self }
     }
@@ -108,6 +118,7 @@ where
         Initialization methods
     */
 
+    /// Initializes the IMU with accelerometer and gyroscope
     pub async fn initialize_6dof(
         mut self,
     ) -> Result<Icm20948<I2C, MagDisabled, Init>, IcmError<E>> {
@@ -120,6 +131,7 @@ where
         })
     }
 
+    /// Initializes the IMU with accelerometer, gyroscope and magnetometer
     pub async fn initialize_9dof(mut self) -> Result<Icm20948<I2C, MagEnabled, Init>, IcmError<E>> {
         self.setup_acc_gyr().await?;
         self.setup_mag().await?;
@@ -205,6 +217,7 @@ where
     I2C: I2c<Error = E>,
     E: Into<IcmError<E>>,
 {
+    /// Reset accelerometer / gyroscope module
     pub async fn device_reset(&mut self) -> Result<(), E> {
         Timer::after(Duration::from_millis(20)).await;
         self.write_to_flag(Bank0::PwrMgmt1, 1 << 7, 1 << 7).await?;
@@ -212,11 +225,12 @@ where
         Ok(())
     }
 
+    /// Enables main ICM module to act as I2C master (eg. for magnetometer)
     async fn enable_i2c_master(&mut self, enable: bool) -> Result<(), E> {
-        self.write_to_flag(Bank0::UserCtrl, (enable as u8) << 5, 1 << 5)
-            .await
+        self.write_to_flag(Bank0::UserCtrl, (enable as u8) << 5, 1 << 5).await
     }
 
+    /// Resets I2C master module
     async fn reset_i2c_master(&mut self) -> Result<(), E> {
         self.write_to_flag(Bank0::UserCtrl, 1 << 1, 1 << 1).await
     }
@@ -235,6 +249,7 @@ where
         Ok(())
     }
 
+    /// Read a const number `N` of bytes from the requested register
     async fn read_from<const N: usize, R: Register>(&mut self, cmd: R) -> Result<[u8; N], E> {
         let mut buf = [0u8; N];
         self.set_user_bank(&cmd, false).await?;
@@ -242,10 +257,10 @@ where
         Ok(buf)
     }
 
+    /// Write a single byte to the requeste register
     async fn write_to<R: Register>(&mut self, cmd: R, data: u8) -> Result<(), E> {
         self.set_user_bank(&cmd, false).await?;
-        self.i2c.write(self.addr, &[cmd.reg(), data]).await?;
-        Ok(())
+        self.i2c.write(self.addr, &[cmd.reg(), data]).await
     }
 
     /// Write to a register, but only overwrite the parts corresponding to the flag byte
@@ -255,10 +270,10 @@ where
     {
         let [mut register] = self.read_from(cmd).await?;
         register = (register & !flag) | (data & flag);
-        self.write_to(cmd, register).await?;
-        Ok(())
+        self.write_to(cmd, register).await
     }
 
+    /// Put the magnetometer into read mode
     async fn set_mag_read(&mut self) -> Result<(), E> {
         let [mut reg] = self.read_from(Bank3::I2cSlv0Addr).await?;
         reg &= 0b01111111;
@@ -266,32 +281,35 @@ where
         self.write_to(Bank3::I2cSlv0Addr, reg).await
     }
 
+    /// Put the magnetometer into write mode
     async fn set_mag_write(&mut self) -> Result<(), E> {
         let [mut reg] = self.read_from(Bank3::I2cSlv0Addr).await?;
         reg &= 0b01111111;
         self.write_to(Bank3::I2cSlv0Addr, reg).await
     }
 
-    async fn mag_write_to(&mut self, cmd: u8, data: u8) -> Result<(), E> {
+    /// Write `data` to the magnetometer module in `reg` (20 ms non-blocking delays)
+    async fn mag_write_to(&mut self, reg: u8, data: u8) -> Result<(), E> {
         self.set_mag_write().await?;
         Timer::after(Duration::from_millis(10)).await;
-        self.write_to(Bank3::I2cSlv0Reg, cmd).await?;
+        self.write_to(Bank3::I2cSlv0Reg, reg).await?;
         self.write_to(Bank3::I2cSlv0Do, data).await?;
         self.write_to(Bank3::I2cSlv0Ctrl, 1 << 7 | 1).await?;
         Timer::after(Duration::from_millis(10)).await;
         self.set_mag_read().await
     }
 
-    async fn mag_read_from<const N: usize>(&mut self, cmd: MagBank) -> Result<[u8; N], E> {
+    /// Read a `N` bytes from the magnetometer in `reg` (20 ms non-blocking delays)
+    async fn mag_read_from<const N: usize>(&mut self, reg: MagBank) -> Result<[u8; N], E> {
         self.set_mag_read().await?;
         Timer::after(Duration::from_millis(10)).await;
-        self.write_to(Bank3::I2cSlv0Reg, cmd.reg()).await?;
+        self.write_to(Bank3::I2cSlv0Reg, reg.reg()).await?;
         self.write_to(Bank3::I2cSlv0Ctrl, 1 << 7 | N as u8).await?;
         Timer::after(Duration::from_millis(10)).await;
         self.read_from(Bank0::ExtSlvSensData00).await
     }
 
-
+    /// Reset magnetometer module ( 120 ms non-blocking delays)
     async fn mag_reset(&mut self) -> Result<(), E> {
         // Control 3 register bit 1 resets magnetometer unit 
         self.mag_write_to(MagBank::Control3.reg(), 1).await?;
@@ -301,6 +319,7 @@ where
         self.reset_i2c_master().await
     }
 
+    /// Configure acceleromter to measure with given range
     pub async fn set_acc_range(&mut self, range: AccelerometerRange) -> Result<(), E> {
         self.write_to_flag(Bank2::AccelConfig, (range as u8) << 1, 0b0110)
             .await?;
@@ -308,6 +327,7 @@ where
         Ok(())
     }
 
+    /// Configure gyroscope to measure with given range
     pub async fn set_gyr_range(&mut self, range: GyroscopeRange) -> Result<(), E> {
         self.write_to_flag(Bank2::GyroConfig1, (range as u8) << 1, 0b0110)
             .await?;
@@ -315,14 +335,17 @@ where
         Ok(())
     }
 
+    /// Set returned unit of accelerometer
     pub fn set_acc_unit(&mut self, unit: AccelerometerUnit) {
         self.config.acc_unit = unit;
     }
 
+    /// Set returned unit of gyroscope
     pub fn set_gyr_unit(&mut self, unit: GyroscopeUnit) {
         self.config.gyro_unit = unit;
     }
     
+    /// Set (or disable) accelerometer digital low-pass filter
     pub async fn set_acc_dlp(&mut self, acc_dlp: Option<AccelerometerDlp>) -> Result<(), E> {
         if let Some(dlp) = acc_dlp {
             self.write_to_flag(Bank2::AccelConfig, (dlp as u8) << 3 | 1, 0b111001).await
@@ -331,6 +354,7 @@ where
         }
     }
 
+    /// Set (or disable) gyroscope digital low-pass filter
     pub async fn set_gyr_dlp(&mut self, gyr_dlp: Option<GyroscopeDlp>) -> Result<(), E> {
         if let Some(dlp) = gyr_dlp {
             self.write_to_flag(Bank2::GyroConfig1, (dlp as u8) << 3 | 1, 0b111001).await
@@ -345,6 +369,7 @@ where
     I2C: I2c<Error = E>,
     E: Into<IcmError<E>>,
 {
+    /// Apply the saved calibration offset+scale to measurement vector
     fn apply_mag_calibration(&self, mag: & mut Vector3<f32>) {
         if self.mag_state.is_calibrated {
             *mag = mag.zip_zip_map(&self.mag_state.offset,&self.mag_state.scale, |m,o,s| {
@@ -353,12 +378,14 @@ where
         }
     }
 
+    /// Set magnetometer calibration data (offset,scale)
     pub fn set_mag_calibration(&mut self, offset: [f32; 3], scale: [f32; 3]) {
         self.mag_state.is_calibrated = true;
         self.mag_state.offset = offset.into();
         self.mag_state.scale = scale.into();
     }
 
+    /// Resets (disables) magnetometer calibration data
     pub fn reset_mag_calibration(&mut self) {
         self.mag_state.is_calibrated = false;
         self.mag_state.offset = Vector3::from_element(1.);
@@ -397,6 +424,7 @@ where
         Ok(Data9Dof { acc, gyr, mag, tmp })
     }
 
+    /// Takes 6 bytes converts them into a Vector3 of floats
     fn scaled_mag_from_bytes(&self, bytes: [u8; 6]) -> Vector3<f32> {
         let mut mag = collect_3xi16_mag(bytes)
         .map(|x| (x as f32)).into();
@@ -430,20 +458,25 @@ where
     E: Into<IcmError<E>>,
 {
 
+    /// Takes 6 bytes converts them into a Vector3 of floats
     fn scaled_acc_from_bytes(&self, bytes: [u8; 6]) -> Vector3<f32> {
         let acc = collect_3xi16(bytes).map(|x| (x as f32) * self.acc_scalar());
         Vector3::from(acc)
     }
 
+    /// Takes 6 bytes converts them into a Vector3 of floats
     fn scaled_gyr_from_bytes(&self, bytes: [u8; 6]) -> Vector3<f32> {
         let gyr = collect_3xi16(bytes).map(|x| (x as f32) * self.gyr_scalar());
         Vector3::from(gyr) - self.gyr_cal
     }
 
+    /// Takes 2 bytes converts them into a temerature as a float
     fn scaled_tmp_from_bytes(&self, bytes: [u8; 2]) -> f32 {
         i16::from_be_bytes(bytes) as f32 / 333.87 - 21.
     }
 
+    // TODO This should be using the internal offset registers!
+    /// Set gyroscope calibration offsets
     pub fn set_gyr_offsets(&mut self, offsets: Vector3<f32>) {
         self.gyr_cal = offsets;
     }
@@ -471,6 +504,7 @@ where
         Ok(collect_3xi16([gxh, gxl, gyh, gyl, gzh, gzl]).into())
     }
 
+    // TODO gyroscope offsets should be handled on-chip!
     /// Get array of scaled gyroscope values
     pub async fn read_gyr(&mut self) -> Result<Vector3<f32>, E> {
         let gyr = self
@@ -481,17 +515,20 @@ where
     }
 
     #[inline(always)]
+    /// Returns the scalar corresponding to the unit and range configured
     fn acc_scalar(&self) -> f32 {
         self.config.acc_unit.scalar() / self.config.acc_range.divisor()
     }
 
     #[inline(always)]
+    /// Returns the scalar corresponding to the unit and range configured
     fn gyr_scalar(&self) -> f32 {
         self.config.gyro_unit.scalar() / self.config.gyro_range.divisor()
     }
 
 }
 
+/// Collects 6 bytes into a vector of i16 values (acc/gyr only)
 fn collect_3xi16(values: [u8; 6]) -> [i16; 3] {
     let [xh, xl, yh, yl, zh, zl] = values;
     [
@@ -501,6 +538,7 @@ fn collect_3xi16(values: [u8; 6]) -> [i16; 3] {
     ]
 }
 
+/// Collects 6 bytes into a vector of i16 values (mag only)
 fn collect_3xi16_mag(values: [u8; 6]) -> [i16; 3] {
     let [xl, xh, yl, yh, zl, zh] = values;
     [

@@ -17,7 +17,7 @@ The current feature set is basic, but allows for reading the most important sens
 - [x] Setting DLP, range and unit
 - [ ] Setting sample rate divider
 - [ ] Setting offsets (acc, gyro)
-- [ ] Support for IFO
+- [ ] Support for FIFO
 - [ ] Support for DMP
 - [ ] Power management
 - [ ] Run self-tests
