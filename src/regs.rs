@@ -1,5 +1,3 @@
-// Register definitions and implementations
-
 /// Register bank select register
 pub const REG_BANK_SEL: u8 = 0x7F;
 
@@ -12,12 +10,12 @@ pub enum UserBank {
     Bank3 = 0b11,
 }
 
-#[repr(u8)]
+#[allow(unused)]
 #[derive(PartialEq, Copy, Clone)]
 pub enum Bank0 {
     WhoAmI = 0x00,
     UserCtrl = 0x03,
-    LpConfig = 0x05, //???
+    LpConfig = 0x05,
     PwrMgmt1 = 0x06,
     PwrMgmt2 = 0x07,
     IntPinCfg = 0x0F,
@@ -50,6 +48,7 @@ pub enum Bank0 {
     FifoCfg = 0x76,
 }
 
+#[allow(unused)]
 #[derive(PartialEq, Copy, Clone)]
 pub enum Bank1 {
     SelfTestXGyro = 0x02,
@@ -64,6 +63,7 @@ pub enum Bank1 {
     TimebaseCorrectionPll = 0x28,
 }
 
+#[allow(unused)]
 #[derive(PartialEq, Copy, Clone)]
 pub enum Bank2 {
     GyroSmplrtDiv = 0x00,
@@ -84,6 +84,7 @@ pub enum Bank2 {
     ModCtrlUsr = 0x54,
 }
 
+#[allow(unused)]
 #[derive(PartialEq, Copy, Clone)]
 pub enum Bank3 {
     I2cMstOdrConfig = 0x00,
@@ -140,6 +141,7 @@ impl Register for Bank3 {
     }
 }
 
+#[allow(unused)]
 #[derive(Copy, Clone)]
 pub enum MagBank {
     DeviceId = 0x01,

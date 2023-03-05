@@ -1,5 +1,4 @@
 #![feature(type_changing_struct_update)]
-#![feature(sort_floats)]
 #![no_std]
 
 use core::marker::PhantomData;
@@ -218,6 +217,10 @@ where
             .await
     }
 
+    async fn reset_i2c_master(&mut self) -> Result<(), E> {
+        self.write_to_flag(Bank0::UserCtrl, 1 << 1, 1 << 1).await
+    }
+
     /// Ensure correct user bank for given register
     async fn set_user_bank<R: Register>(&mut self, bank: &R, force: bool) -> Result<(), E> {
         if (self.user_bank != bank.bank()) || force {
@@ -288,9 +291,6 @@ where
         self.read_from(Bank0::ExtSlvSensData00).await
     }
 
-    async fn reset_i2c_master(&mut self) -> Result<(), E> {
-        self.write_to_flag(Bank0::UserCtrl, 1 << 1, 1 << 1).await
-    }
 
     async fn mag_reset(&mut self) -> Result<(), E> {
         // Control 3 register bit 1 resets magnetometer unit 
@@ -323,16 +323,6 @@ where
         self.config.gyro_unit = unit;
     }
     
-    #[inline(always)]
-    fn acc_scalar(&self) -> f32 {
-        self.config.acc_unit.scalar() / self.config.acc_range.divisor()
-    }
-
-    #[inline(always)]
-    fn gyr_scalar(&self) -> f32 {
-        self.config.gyro_unit.scalar() / self.config.gyro_range.divisor()
-    }
-
     pub async fn set_acc_dlp(&mut self, acc_dlp: Option<AccelerometerDlp>) -> Result<(), E> {
         if let Some(dlp) = acc_dlp {
             self.write_to_flag(Bank2::AccelConfig, (dlp as u8) << 3 | 1, 0b111001).await
@@ -355,6 +345,14 @@ where
     I2C: I2c<Error = E>,
     E: Into<IcmError<E>>,
 {
+    fn apply_mag_calibration(&self, mag: & mut Vector3<f32>) {
+        if self.mag_state.is_calibrated {
+            *mag = mag.zip_zip_map(&self.mag_state.offset,&self.mag_state.scale, |m,o,s| {
+                ( m - o ) / s
+            });
+        }
+    }
+
     pub fn set_mag_calibration(&mut self, offset: [f32; 3], scale: [f32; 3]) {
         self.mag_state.is_calibrated = true;
         self.mag_state.offset = offset.into();
@@ -367,23 +365,13 @@ where
         self.mag_state.scale = Vector3::from_element(1.);
     }
 
-    fn apply_mag_calibration(&self, mag: &mut Vector3<f32>) {
-        if self.mag_state.is_calibrated {
-            *mag = Vector3::from([
-                (mag[0] - self.mag_state.offset[0]) / self.mag_state.scale[0],
-                (mag[1] - self.mag_state.offset[1]) / self.mag_state.scale[1],
-                (mag[2] - self.mag_state.offset[2]) / self.mag_state.scale[2],
-            ]);
-        }
-    }
-
-    // Get array of scaled magnetometer values
+    /// Get vector of scaled magnetometer values
     pub async fn read_mag(&mut self) -> Result<Vector3<f32>, E> {
         let mut mag = self.read_mag_unscaled().await?
         .map(|x| (x as f32)).into();
         self.apply_mag_calibration(&mut mag);
 
-        Ok(mag.into())
+        Ok(mag)
     }
 
     /// Get array of unscaled accelerometer values
@@ -394,7 +382,7 @@ where
         Ok(mag)
     }
 
-    /// Get 3 arrays of scaled accelerometer, gyroscope and magnetometer values, and temperature
+    /// Get scaled measurement for accelerometer, gyroscope and magnetometer, and temperature
     pub async fn read_all(&mut self) -> Result<Data9Dof, E> {
         let raw: [u8; 20] = self.read_from(Bank0::AccelXoutH).await?;
         let [axh, axl, ayh, ayl, azh, azl, gxh, gxl, gyh, gyl, gzh, gzl, tph, tpl, mxl, mxh, myl, myh, mzl, mzh] =
@@ -413,7 +401,7 @@ where
         let mut mag = collect_3xi16_mag(bytes)
         .map(|x| (x as f32)).into();
         self.apply_mag_calibration(&mut mag);
-        mag.into()
+        mag
     }
 }
 
@@ -422,7 +410,7 @@ where
     I2C: I2c<Error = E>,
     E: Into<IcmError<E>>,
 {
-    /// Get 2 arrays of scaled accelerometer and gyroscope values, and temperature
+    /// Get scaled measurements for accelerometer and gyroscope, and temperature
     pub async fn read_all(&mut self) -> Result<Data6Dof, E> {
         let raw: [u8; 14] = self.read_from(Bank0::AccelXoutH).await?;
         let [axh, axl, ayh, ayl, azh, azl, gxh, gxl, gyh, gyl, gzh, gzl, tph, tpl] = raw;
@@ -441,6 +429,7 @@ where
     I2C: I2c<Error = E>,
     E: Into<IcmError<E>>,
 {
+
     fn scaled_acc_from_bytes(&self, bytes: [u8; 6]) -> Vector3<f32> {
         let acc = collect_3xi16(bytes).map(|x| (x as f32) * self.acc_scalar());
         Vector3::from(acc)
@@ -455,8 +444,8 @@ where
         i16::from_be_bytes(bytes) as f32 / 333.87 - 21.
     }
 
-    pub fn set_gyr_offsets(&mut self, offsets: [f32; 3]) {
-        self.gyr_cal = offsets.into();
+    pub fn set_gyr_offsets(&mut self, offsets: Vector3<f32>) {
+        self.gyr_cal = offsets;
     }
 
     /// Get array of unscaled accelerometer values
@@ -490,6 +479,17 @@ where
             .map(|x| (x as f32) * self.gyr_scalar());
         Ok(gyr - self.gyr_cal)
     }
+
+    #[inline(always)]
+    fn acc_scalar(&self) -> f32 {
+        self.config.acc_unit.scalar() / self.config.acc_range.divisor()
+    }
+
+    #[inline(always)]
+    fn gyr_scalar(&self) -> f32 {
+        self.config.gyro_unit.scalar() / self.config.gyro_range.divisor()
+    }
+
 }
 
 fn collect_3xi16(values: [u8; 6]) -> [i16; 3] {
