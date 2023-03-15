@@ -7,5 +7,8 @@ edition = "2021"
 
 [dependencies]
 embedded-hal-async = "0.2.0-alpha.0"
-embassy-time = { path = "../../embassy/embassy-time" } # git clone embassy repo
+embassy-time = { git = "https://github.com/embassy-rs/embassy" } # git clone embassy repo
 nalgebra = {version = "*", default-features = false, features = ["libm"]}
+
+defmt = "0.3"
+defmt-rtt = "0.4"

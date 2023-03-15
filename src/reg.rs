@@ -97,47 +97,47 @@ pub enum Bank3 {
 }
 
 pub trait Register {
-    fn bank(&self) -> UserBank;
-    fn reg(&self) -> u8;
+    fn bank(self) -> UserBank;
+    fn reg(self) -> u8;
 }
 
 impl Register for Bank0 {
-    fn bank(&self) -> UserBank {
+    fn bank(self) -> UserBank {
         UserBank::Bank0
     }
 
-    fn reg(&self) -> u8 {
-        *self as u8
+    fn reg(self) -> u8 {
+        self as u8
     }
 }
 
 impl Register for Bank1 {
-    fn bank(&self) -> UserBank {
+    fn bank(self) -> UserBank {
         UserBank::Bank1
     }
 
-    fn reg(&self) -> u8 {
-        *self as u8
+    fn reg(self) -> u8 {
+        self as u8
     }
 }
 
 impl Register for Bank2 {
-    fn bank(&self) -> UserBank {
+    fn bank(self) -> UserBank {
         UserBank::Bank2
     }
 
-    fn reg(&self) -> u8 {
-        *self as u8
+    fn reg(self) -> u8 {
+        self as u8
     }
 }
 
 impl Register for Bank3 {
-    fn bank(&self) -> UserBank {
+    fn bank(self) -> UserBank {
         UserBank::Bank3
     }
 
-    fn reg(&self) -> u8 {
-        *self as u8
+    fn reg(self) -> u8 {
+        self as u8
     }
 }
 
@@ -155,7 +155,7 @@ pub enum MagBank {
 }
 
 impl MagBank {
-    pub fn reg(&self) -> u8 {
-        *self as u8
+    pub fn reg(self) -> u8 {
+        self as u8
     }
 }
