@@ -6,8 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-embedded-hal-async = "0.2.0-alpha.0"
-embassy-time = { git = "https://github.com/embassy-rs/embassy" } # git clone embassy repo
+embedded-hal-async = "1.0.0-rc.1"
+embassy-time = { git = "https://github.com/embassy-rs/embassy" }
 nalgebra = {version = "*", default-features = false, features = ["libm"]}
 
 defmt = "0.3"
