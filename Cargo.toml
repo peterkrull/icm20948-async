@@ -5,6 +5,9 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+align-mag = []
+
 [dependencies]
 embedded-hal-async = "1.0.0-rc.1"
 embassy-time = { git = "https://github.com/embassy-rs/embassy" }

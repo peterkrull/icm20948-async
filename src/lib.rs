@@ -595,11 +595,20 @@ fn collect_3xi16(values: [u8; 6]) -> [i16; 3] {
 /// Collects 6 bytes into a vector of i16 values (mag only)
 fn collect_3xi16_mag(values: [u8; 6]) -> [i16; 3] {
     let [xl, xh, yl, yh, zl, zh] = values;
-    [
+    #[cfg(feature = "align-mag")]
+    let mag = [
         i16::from_be_bytes([xh, xl]),
         -i16::from_be_bytes([yh, yl]),
         -i16::from_be_bytes([zh, zl]),
-    ]
+    ];
+    #[cfg(not(feature = "align-mag"))]
+    let mag = [
+        i16::from_be_bytes([xh, xl]),
+        i16::from_be_bytes([yh, yl]),
+        i16::from_be_bytes([zh, zl]),
+    ];
+
+    mag
 }
 #[derive(Copy, Clone)]
 pub struct Icm20948Config {
