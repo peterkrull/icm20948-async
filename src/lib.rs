@@ -553,7 +553,7 @@ where
     }
 
     /// Set gyroscope calibration offsets by writing them to the IMU
-    async fn set_gyr_offsets(&mut self, offsets: Vector3<i16>) -> Result<(),E> {
+    pub async fn set_gyr_offsets(&mut self, offsets: Vector3<i16>) -> Result<(),E> {
         let [[xh,xl],[yh,yl],[zh,zl]] : [[u8;2];3] = offsets.map(|x|{
             (-x).to_be_bytes()
         }).into();
@@ -565,9 +565,7 @@ where
      }
 
     pub async fn new_data_ready(&mut self) -> u8 {
-        if let Ok([byte]) = self.read_from(Bank0::DataRdyStatus).await {
-            byte
-        } else {0}
+        self.read_from(Bank0::DataRdyStatus).await.unwrap_or(0)
     }
 
     /// Returns the scalar corresponding to the unit and range configured
