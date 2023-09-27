@@ -563,9 +563,11 @@ where
         self.i2c.write(self.addr, &[Bank2::YgOffsUsrh.reg(), yh, yl]).await?;
         self.i2c.write(self.addr, &[Bank2::ZgOffsUsrh.reg(), zh, zl]).await
      }
-
+        
     pub async fn new_data_ready(&mut self) -> u8 {
-        self.read_from(Bank0::DataRdyStatus).await.unwrap_or(0)
+        if let Ok([byte]) = self.read_from(Bank0::DataRdyStatus).await {
+            byte
+        } else {0}
     }
 
     /// Returns the scalar corresponding to the unit and range configured
