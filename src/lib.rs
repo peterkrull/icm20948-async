@@ -457,10 +457,10 @@ where
         Ok(Data9Dof { acc, gyr, mag, tmp })
     }
 
-    /// Takes 6 bytes converts them into a Vector3 of floats
+    /// Takes 6 bytes converts them into a Vector3 of floats, unit is micro tesla
     fn scaled_mag_from_bytes(&self, bytes: [u8; 6]) -> Vector3<f32> {
         let mut mag = collect_3xi16_mag(bytes)
-        .map(|x| (x as f32)).into();
+        .map(|x| (0.15 * x as f32)).into();
         self.apply_mag_calibration(&mut mag);
         mag
     }
