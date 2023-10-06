@@ -443,7 +443,7 @@ where
     }
 
     /// Get scaled measurement for accelerometer, gyroscope and magnetometer, and temperature
-    pub async fn read_all(&mut self) -> Result<Data9Dof, E> {
+    pub async fn read_9dof(&mut self) -> Result<Data9Dof, E> {
         let raw: [u8; 20] = self.read_from(Bank0::AccelXoutH).await?;
         let [axh, axl, ayh, ayl, azh, azl, gxh, gxl, gyh, gyl, gzh, gzl, tph, tpl, mxl, mxh, myl, myh, mzl, mzh] =
             raw;
@@ -463,25 +463,6 @@ where
         .map(|x| (0.15 * x as f32)).into();
         self.apply_mag_calibration(&mut mag);
         mag
-    }
-}
-
-impl<I2C, E> Icm20948<I2C, MagDisabled, Init>
-where
-    I2C: I2c<Error = E>,
-    E: Into<IcmError<E>>,
-{
-    /// Get scaled measurements for accelerometer and gyroscope, and temperature
-    pub async fn read_all(&mut self) -> Result<Data6Dof, E> {
-        let raw: [u8; 14] = self.read_from(Bank0::AccelXoutH).await?;
-        let [axh, axl, ayh, ayl, azh, azl, gxh, gxl, gyh, gyl, gzh, gzl, tph, tpl] = raw;
-
-        let acc = self.scaled_acc_from_bytes([axh, axl, ayh, ayl, azh, azl]);
-        let gyr = self.scaled_gyr_from_bytes([gxh, gxl, gyh, gyl, gzh, gzl]);
-
-        let tmp = self.scaled_tmp_from_bytes([tph, tpl]);
-
-        Ok(Data6Dof { acc, gyr, tmp })
     }
 }
 
@@ -536,6 +517,19 @@ where
             .await?
             .map(|x| f32::from(x) * self.gyr_scalar());
         Ok(gyr)
+    }
+
+    /// Get scaled measurements for accelerometer and gyroscope, and temperature
+    pub async fn read_6dof(&mut self) -> Result<Data6Dof, E> {
+        let raw: [u8; 14] = self.read_from(Bank0::AccelXoutH).await?;
+        let [axh, axl, ayh, ayl, azh, azl, gxh, gxl, gyh, gyl, gzh, gzl, tph, tpl] = raw;
+
+        let acc = self.scaled_acc_from_bytes([axh, axl, ayh, ayl, azh, azl]);
+        let gyr = self.scaled_gyr_from_bytes([gxh, gxl, gyh, gyl, gzh, gzl]);
+
+        let tmp = self.scaled_tmp_from_bytes([tph, tpl]);
+
+        Ok(Data6Dof { acc, gyr, tmp })
     }
 
     /// Collects and averages `num` sampels for gyro calibration and saves them on-chip
