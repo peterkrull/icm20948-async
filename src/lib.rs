@@ -119,7 +119,7 @@ where
         }
     }
 
-    /// Creates an uninitialized IMU struct with a default config on address 0x69
+    /// Creates an uninitialized IMU struct with a default config.
     #[must_use]
     pub fn new_i2c(bus: BUS, delay: DELAY) -> Icm20948<IcmBusI2c<BUS,E>, MagDisabled, NotInit, DELAY, E> {
         Self::new_i2c_from_cfg(bus, delay, Icm20948Config::default())
@@ -146,7 +146,7 @@ where
         }
     }
 
-    /// Creates an uninitialized IMU struct with a default config on address 0x69
+    /// Creates an uninitialized IMU struct with a default config.
     #[must_use]
     pub fn new_spi(bus: BUS, delay: DELAY) -> Icm20948<IcmBusSpi<BUS,E>, MagDisabled, NotInit, DELAY, E> {
         Self::new_spi_from_cfg(bus, delay, Icm20948Config::default())
@@ -185,7 +185,7 @@ where
     E: Into<IcmError<E>>,
     DELAY: DelayUs
 {
-    /// Set I2C address of ICM module. Default is 0x68, alternative is 0x69
+    /// Set I2C address of ICM module. See `I2cAddress` for defaults, otherwise `u8` implements `Into<I2cAddress>`
     #[must_use]
     pub fn set_address(self, address: impl Into<I2cAddress>) -> Icm20948<IcmBusI2c<BUS, E>, MagDisabled, NotInit, DELAY, E> {
         Icm20948 { bus: IcmBusI2c { address: address.into(), ..self.bus }, ..self }
