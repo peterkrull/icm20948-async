@@ -2,6 +2,7 @@
 name = "icm20948-async"
 version = "0.1.1"
 edition = "2021"
+description = "Async driver for the ICM20948 (Imu+Mag) for no_std environments"
 authors = ["Peter Krull"]
 license = "MIT"
 repository = "https://github.com/peterkrull/icm20948-async"
