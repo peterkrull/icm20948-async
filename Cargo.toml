@@ -7,7 +7,7 @@ authors = ["Peter Krull"]
 license = "MIT"
 repository = "https://github.com/peterkrull/icm20948-async"
 readme = "README.md"
-keywords = ["embedded","embedded-hal","async","no_std","icm20948","embassy"]
+keywords = ["embedded","embedded-hal","async","no_std","icm20948"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
