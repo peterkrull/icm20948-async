@@ -3,7 +3,7 @@
 #![no_std]
 
 use core::marker::PhantomData;
-use embedded_hal_async::delay::DelayUs;
+use embedded_hal_async::{delay::DelayUs,i2c::I2c,spi::SpiBus};
 use nalgebra::Vector3;
 
 mod reg;
@@ -61,7 +61,6 @@ where E: Into<IcmError<E>> {
 }
 
 // Implementation of bus trait for I2c
-use embedded_hal_async::i2c::I2c;
 impl<I2C,E> BusTransfer<E> for IcmBusI2c<I2C,E>
 where
     I2C: I2c<Error = E>,
@@ -77,7 +76,6 @@ where
 }
 
 // Implementation of bus trait for Spi
-use embedded_hal_async::spi::SpiBus;
 impl<SPI,E> BusTransfer<E> for IcmBusSpi<SPI,E>
 where
     SPI: SpiBus<Error = E>,
