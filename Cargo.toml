@@ -3,6 +3,10 @@ name = "icm20948-async"
 version = "0.1.1"
 edition = "2021"
 authors = ["Peter Krull"]
+license = "MIT"
+repository = "https://github.com/peterkrull/icm20948-async"
+readme = "README.md"
+keywords = ["embedded","embedded-hal","async","no_std","icm20948","embassy"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -11,7 +15,4 @@ align-mag = []
 
 [dependencies]
 embedded-hal-async = "1.0.0-rc.1"
-nalgebra = {version = "0.32", default-features = false, features = ["libm"]}
-
-defmt = "0.3"
-defmt-rtt = "0.4"
+nalgebra = {version = ">0.30.0", default-features = false, features = ["libm"]}

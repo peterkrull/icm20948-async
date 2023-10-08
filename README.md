@@ -1,6 +1,6 @@
 # Async Rust driver for the ICM20948
 
-This driver crate for the ICM20948 uses the `embedded-hal-async` traits and the `embassy_time` crate to achieve non-blocking access to the ICM20948. The crate uses generics to automatically expose the relevant methods, when various hardware features are configured, for example when the magnetometer is enabled.
+This driver crate for the ICM20948 uses the `embedded-hal-async` traits to achieve completely non-blocking access to the ICM20948. The crate uses generics to automatically expose the relevant methods, when various hardware features are configured, for example when the magnetometer is enabled.
 
 The current feature set is basic, but allows for reading the main sensors and writing the most important values. Below is the feature list, with supported features checked off. The rest are on the to-do list. 
 
