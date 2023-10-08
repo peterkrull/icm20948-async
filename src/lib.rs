@@ -43,13 +43,13 @@ pub struct NotInit;
 
 // Type to hold bus information for I2c
 pub struct IcmBusI2c<I2C,E> {
-    bus: I2C,
+    bus_inner: I2C,
     bus_error: PhantomData<E>,
     address: u8
 }
 // Type to hold bus information for Spi
 pub struct IcmBusSpi<SPI,E> {
-    bus: SPI,
+    bus_inner: SPI,
     bus_error: PhantomData<E>
 }
 
@@ -67,11 +67,11 @@ where
     E: Into<IcmError<E>>,
 {
     async fn bus_transfer(&mut self, write: &[u8], read: &mut [u8]) -> Result<(),E> {
-        self.bus.write_read(self.address, write, read).await
+        self.bus_inner.write_read(self.address, write, read).await
     }
 
     async fn bus_write(&mut self, write: &[u8]) -> Result<(),E> {
-        self.bus.write(self.address, write).await
+        self.bus_inner.write(self.address, write).await
     }
 }
 
@@ -82,11 +82,11 @@ where
     E: Into<IcmError<E>>    
 {
     async fn bus_transfer(&mut self, write: &[u8], read: &mut [u8]) -> Result<(),E> {
-        self.bus.transfer(read, write).await
+        self.bus_inner.transfer(read, write).await
     }
 
     async fn bus_write(&mut self, write: &[u8]) -> Result<(),E> {
-        self.bus.write(write).await
+        self.bus_inner.write(write).await
     }
 }
 
@@ -110,7 +110,7 @@ where
     #[must_use]
     pub fn new_i2c_from_cfg(bus: BUS, delay: DELAY, cfg: Icm20948Config) -> Icm20948<IcmBusI2c<BUS,E>, MagDisabled, NotInit, DELAY, E> {
         Self {
-            bus: IcmBusI2c { bus , bus_error: PhantomData::<E>, address: ICM20948_ADDR },
+            bus: IcmBusI2c { bus_inner: bus , bus_error: PhantomData::<E>, address: ICM20948_ADDR },
             config: cfg,
             user_bank: UserBank::Bank0,
             delay,
@@ -137,7 +137,7 @@ where
     #[must_use]
     pub fn new_spi_from_cfg(bus: BUS, delay: DELAY, cfg: Icm20948Config) -> Icm20948<IcmBusSpi<BUS, E>, MagDisabled, NotInit, DELAY, E> {
         Self {
-            bus: IcmBusSpi { bus, bus_error: PhantomData::<E> },
+            bus: IcmBusSpi { bus_inner: bus, bus_error: PhantomData::<E> },
             config: cfg,
             user_bank: UserBank::Bank0,
             mag_state: MagDisabled,
@@ -151,6 +151,32 @@ where
     #[must_use]
     pub fn new_spi(bus: BUS, delay: DELAY) -> Icm20948<IcmBusSpi<BUS,E>, MagDisabled, NotInit, DELAY, E> {
         Self::new_spi_from_cfg(bus, delay, Icm20948Config::default())
+    }
+}
+
+impl<BUS, MAG, DELAY, E> Icm20948<IcmBusI2c<BUS,E>, MAG, Init, DELAY, E>
+where
+    BUS: I2c<Error = E>,
+    E: Into<IcmError<E>>,
+    DELAY: DelayUs
+{
+    /// Consumes the `Icm20948` object and releases the I2c bus back to the user
+    #[must_use]
+    pub fn destroy(self) -> BUS {
+        self.bus.bus_inner
+    }
+}
+
+impl<BUS, MAG, DELAY, E> Icm20948<IcmBusSpi<BUS,E>, MAG, Init, DELAY, E>
+where
+    BUS: SpiBus<Error = E>,
+    E: Into<IcmError<E>>,
+    DELAY: DelayUs
+{
+    /// Consumes the `Icm20948` object and releases the Spi bus back to the user
+    #[must_use]
+    pub fn destroy(self) -> BUS {
+        self.bus.bus_inner
     }
 }
 
@@ -331,11 +357,6 @@ where
     BUS: BusTransfer<E>,
     DELAY: DelayUs
 {
-
-    /// Consumes the Icm20948 object and releases the bus back to the user
-    pub fn destroy(self) -> BUS {
-        self.bus
-    }
 
     /// Reset accelerometer / gyroscope module
     pub async fn device_reset(&mut self) -> Result<(), E> {
