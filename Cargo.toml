@@ -1,6 +1,6 @@
 [package]
 name = "icm20948-async"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Async driver for the ICM20948 (Imu+Mag) for no_std environments"
 authors = ["Peter Krull"]
