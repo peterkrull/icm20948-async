@@ -1,16 +1,13 @@
 #![feature(type_changing_struct_update)]
+#![feature(async_fn_in_trait)]
 #![no_std]
 
-// use defmt::*;
-// use defmt_rtt as _;
-
 use core::marker::PhantomData;
-
 use embassy_time::{Duration, Timer};
-use embedded_hal_async::i2c::I2c;
 use nalgebra::Vector3;
 
-pub mod reg; use reg::*;
+mod reg;
+use crate::reg::*;
 
 const ICM20948_ADDR: u8 = 0x69; // I2C address of the ICM20948
 const MAGNET_ADDR: u8 = 0x0C; // I2C address of magnetometer
@@ -44,94 +41,181 @@ pub struct MagDisabled;
 pub struct Init;
 pub struct NotInit;
 
-pub struct Icm20948<I2C, MAG, INIT> {
-    i2c: I2C,
-    addr: u8,
-    config: Icm20948Config,
-    user_bank: UserBank,
-    mag_state: MAG,
-    init_state: PhantomData<INIT>,
+// Type to hold bus information for I2c
+pub struct IcmBusI2c<I2C,E> {
+    bus: I2C,
+    bus_error: PhantomData<E>,
+    address: u8
+}
+// Type to hold bus information for Spi
+pub struct IcmBusSpi<SPI,E> {
+    bus: SPI,
+    bus_error: PhantomData<E>
 }
 
-impl<I2C, E> Icm20948<I2C, MagDisabled, NotInit>
+// Trait to allow for generic behavior across I2c or Spi usage
+pub trait BusTransfer <E>
+where E: Into<IcmError<E>> {
+    async fn bus_transfer(&mut self, write: &[u8], read: &mut [u8]) -> Result<(),E>;
+    async fn bus_write(&mut self, write: &[u8]) -> Result<(),E>;
+}
+
+// Implementation of bus trait for I2c
+use embedded_hal_async::i2c::I2c;
+impl<I2C,E> BusTransfer<E> for IcmBusI2c<I2C,E>
 where
     I2C: I2c<Error = E>,
     E: Into<IcmError<E>>,
 {
+    async fn bus_transfer(&mut self, write: &[u8], read: &mut [u8]) -> Result<(),E> {
+        self.bus.write_read(self.address, write, read).await
+    }
+
+    async fn bus_write(&mut self, write: &[u8]) -> Result<(),E> {
+        self.bus.write(self.address, write).await
+    }
+}
+
+// Implementation of bus trait for Spi
+use embedded_hal_async::spi::SpiBus;
+impl<SPI,E> BusTransfer<E> for IcmBusSpi<SPI,E>
+where
+    SPI: SpiBus<Error = E>,
+    E: Into<IcmError<E>>    
+{
+    async fn bus_transfer(&mut self, write: &[u8], read: &mut [u8]) -> Result<(),E> {
+        self.bus.transfer(read, write).await
+    }
+
+    async fn bus_write(&mut self, write: &[u8]) -> Result<(),E> {
+        self.bus.write(write).await
+    }
+}
+
+pub struct Icm20948<BUS, MAG, INIT, E> {
+    bus: BUS,
+    config: Icm20948Config,
+    user_bank: UserBank,
+    mag_state: MAG,
+    init_state: PhantomData<INIT>,
+    bus_error: PhantomData<E>,
+}
+
+impl<BUS, E> Icm20948<IcmBusI2c<BUS,E>, MagDisabled, NotInit, E>
+where
+    BUS: I2c<Error = E>,
+    E: Into<IcmError<E>>,
+{
     /// Creates an uninitialized IMU struct with the given config.
     #[must_use]
-    pub fn new_from_cfg(i2c: I2C, cfg: Icm20948Config) -> Icm20948<I2C, MagDisabled, NotInit> {
+    pub fn new_i2c_from_cfg(bus: BUS, cfg: Icm20948Config) -> Icm20948<IcmBusI2c<BUS,E>, MagDisabled, NotInit, E> {
         Self {
-            i2c,
-            addr: ICM20948_ADDR,
+            bus: IcmBusI2c { bus , bus_error: PhantomData::<E>, address: ICM20948_ADDR },
             config: cfg,
             user_bank: UserBank::Bank0,
             mag_state: MagDisabled,
             init_state: PhantomData::<NotInit>,
+            bus_error: PhantomData::<E>,
         }
     }
 
     /// Creates an uninitialized IMU struct with a default config on address 0x68
     #[must_use]
-    pub fn new(i2c: I2C) -> Icm20948<I2C, MagDisabled, NotInit> {
-        Self::new_from_cfg(i2c, Icm20948Config::default())
+    pub fn new_i2c(bus: BUS) -> Icm20948<IcmBusI2c<BUS,E>, MagDisabled, NotInit, E> {
+        Self::new_i2c_from_cfg(bus, Icm20948Config::default())
+    }
+}
+
+impl<BUS, E> Icm20948<IcmBusSpi<BUS,E>, MagDisabled, NotInit, E>
+where
+    BUS: SpiBus<Error = E>,
+    E: Into<IcmError<E>>,
+{
+    /// Creates an uninitialized IMU struct with the given config.
+    #[must_use]
+    pub fn new_spi_from_cfg(bus: BUS, cfg: Icm20948Config) -> Icm20948<IcmBusSpi<BUS, E>, MagDisabled, NotInit, E> {
+        Self {
+            bus: IcmBusSpi { bus, bus_error: PhantomData::<E> },
+            config: cfg,
+            user_bank: UserBank::Bank0,
+            mag_state: MagDisabled,
+            init_state: PhantomData::<NotInit>,
+            bus_error: PhantomData::<E>,
+        }
     }
 
+    /// Creates an uninitialized IMU struct with a default config on address 0x68
+    #[must_use]
+    pub fn new_spi(bus: BUS) -> Icm20948<IcmBusSpi<BUS,E>, MagDisabled, NotInit, E> {
+        Self::new_spi_from_cfg(bus, Icm20948Config::default())
+    }
+}
+
+impl<BUS, E> Icm20948<IcmBusI2c<BUS,E>, MagDisabled, NotInit, E>
+where
+    BUS: I2c<Error = E>,
+    E: Into<IcmError<E>>,
+{
+    /// Set I2C address of ICM module. Default is 0x68, alternative is 0x69
+    #[must_use]
+    pub fn set_address(self, address: u8) -> Icm20948<IcmBusI2c<BUS, E>, MagDisabled, NotInit, E> {
+        Icm20948 { bus: IcmBusI2c { address, ..self.bus }, ..self }
+    }
+}
+
+impl<BUS, E> Icm20948<BUS, MagDisabled, NotInit, E>
+where
+    BUS: BusTransfer<E>
+{
     /*
         Configuration methods
     */
 
-    /// Set I2C address of ICM module. Default is 0x68, alternative is 0x69
-    #[must_use]
-    pub fn set_address(self, addr: u8) -> Icm20948<I2C, MagDisabled, NotInit> {
-        Icm20948 { addr, ..self }
-    }
-
     /// Set accelerometer measuring range, choises are 2G, 4G, 8G or 16G
     #[must_use]
-    pub fn acc_range(self, acc_range: AccelerometerRange) -> Icm20948<I2C, MagDisabled, NotInit> {
+    pub fn acc_range(self, acc_range: AccelerometerRange) -> Icm20948<BUS, MagDisabled, NotInit, E> {
         Icm20948 { config: Icm20948Config { acc_range, ..self.config }, ..self }
     }
 
     /// Set accelerometer digital lowpass filter frequency
     #[must_use]
-    pub fn acc_dlp(self, acc_dlp: AccelerometerDlp) -> Icm20948<I2C, MagDisabled, NotInit> {
+    pub fn acc_dlp(self, acc_dlp: AccelerometerDlp) -> Icm20948<BUS, MagDisabled, NotInit, E> {
         Icm20948 { config: Icm20948Config { acc_dlp, ..self.config },..self }
     }
 
     /// Set returned unit of accelerometer measurement, choises are Gs or m/s^2
     #[must_use]
-    pub fn acc_unit(self, acc_unit: AccelerometerUnit) -> Icm20948<I2C, MagDisabled, NotInit> {
+    pub fn acc_unit(self, acc_unit: AccelerometerUnit) -> Icm20948<BUS, MagDisabled, NotInit, E> {
         Icm20948 { config: Icm20948Config { acc_unit, ..self.config }, ..self }
     }
 
     /// Set accelerometer output data rate
     #[must_use]
-    pub fn acc_odr(self, acc_odr: u16) -> Icm20948<I2C, MagDisabled, NotInit> {
+    pub fn acc_odr(self, acc_odr: u16) -> Icm20948<BUS, MagDisabled, NotInit, E> {
         Icm20948 { config: Icm20948Config { acc_odr, ..self.config }, ..self }
     }
 
     /// Set gyroscope measuring range, choises are 250Dps, 500Dps, 1000Dps and 2000Dps
     #[must_use]
-    pub fn gyr_range(self, gyr_range: GyroscopeRange) -> Icm20948<I2C, MagDisabled, NotInit> {
+    pub fn gyr_range(self, gyr_range: GyroscopeRange) -> Icm20948<BUS, MagDisabled, NotInit, E> {
         Icm20948 { config: Icm20948Config { gyr_range, ..self.config }, ..self }
     }
 
     /// Set gyroscope digital low pass filter frequency
     #[must_use]
-    pub fn gyr_dlp(self, gyr_dlp: GyroscopeDlp) -> Icm20948<I2C, MagDisabled, NotInit> {
+    pub fn gyr_dlp(self, gyr_dlp: GyroscopeDlp) -> Icm20948<BUS, MagDisabled, NotInit, E> {
         Icm20948 { config: Icm20948Config { gyr_dlp, ..self.config }, ..self }
     }
 
     /// Set returned unit of gyroscope measurement, choises are degrees/s or radians/s
     #[must_use]
-    pub fn gyr_unit(self, gyr_unit: GyroscopeUnit) -> Icm20948<I2C, MagDisabled, NotInit> {
+    pub fn gyr_unit(self, gyr_unit: GyroscopeUnit) -> Icm20948<BUS, MagDisabled, NotInit, E> {
         Icm20948 { config: Icm20948Config { gyr_unit, ..self.config }, ..self }
     }
 
     /// Set gyroscope output data rate
     #[must_use]
-    pub fn gyr_odr(self, gyr_odr: u8) -> Icm20948<I2C, MagDisabled, NotInit> {
+    pub fn gyr_odr(self, gyr_odr: u8) -> Icm20948<BUS, MagDisabled, NotInit, E> {
         Icm20948 { config: Icm20948Config { gyr_odr, ..self.config }, ..self }
     }
 
@@ -142,7 +226,7 @@ where
     /// Initializes the IMU with accelerometer and gyroscope
     pub async fn initialize_6dof(
         mut self,
-    ) -> Result<Icm20948<I2C, MagDisabled, Init>, IcmError<E>> {
+    ) -> Result<Icm20948<BUS, MagDisabled, Init, E>, IcmError<E>> {
         self.setup_acc_gyr().await?;
 
         Ok(Icm20948 {
@@ -153,14 +237,14 @@ where
     }
 
     /// Initializes the IMU with accelerometer, gyroscope and magnetometer
-    pub async fn initialize_9dof(mut self) -> Result<Icm20948<I2C, MagEnabled, Init>, IcmError<E>> {
+    pub async fn initialize_9dof(mut self) -> Result<Icm20948<BUS, MagEnabled, Init, E>, IcmError<E>> {
         self.setup_acc_gyr().await?;
         self.setup_mag().await?;
 
         Ok(Icm20948 {
             mag_state: MagEnabled {
                 is_calibrated: false,
-                offset: Vector3::from_element(1.),
+                offset: Vector3::zeros(),
                 scale: Vector3::from_element(1.),
             },
             init_state: PhantomData::<Init>,
@@ -237,11 +321,16 @@ where
     }
 }
 
-impl<I2C, E, MAG, INIT> Icm20948<I2C, MAG, INIT>
+impl<BUS, E, MAG, INIT> Icm20948<BUS, MAG, INIT, E>
 where
-    I2C: I2c<Error = E>,
-    E: Into<IcmError<E>>,
+    BUS: BusTransfer<E>,
 {
+
+    /// Consumes the Icm20948 object and releases the bus back to the user
+    pub fn destroy(self) -> BUS {
+        self.bus
+    }
+
     /// Reset accelerometer / gyroscope module
     pub async fn device_reset(&mut self) -> Result<(), E> {
         Timer::after(Duration::from_millis(20)).await;
@@ -263,7 +352,7 @@ where
     /// Ensure correct user bank for given register
     async fn set_user_bank<R: Register + Copy>(&mut self, bank: &R, force: bool) -> Result<(), E> {
         if (self.user_bank != bank.bank()) || force {
-            self.i2c.write(self.addr,&[reg::REG_BANK_SEL, (bank.bank() as u8) << 4]).await?;
+            self.bus.bus_write(&[REG_BANK_SEL, (bank.bank() as u8) << 4]).await?;
             self.user_bank = bank.bank();
         }
         Ok(())
@@ -273,14 +362,14 @@ where
     async fn read_from<const N: usize, R: Register + Copy>(&mut self, cmd: R) -> Result<[u8; N], E> {
         let mut buf = [0u8; N];
         self.set_user_bank(&cmd, false).await?;
-        self.i2c.write_read(self.addr, &[cmd.reg()], &mut buf) .await?;
+        self.bus.bus_transfer(&[cmd.reg()],&mut buf) .await?;
         Ok(buf)
     }
 
     /// Write a single byte to the requeste register
     async fn write_to<R: Register + Copy>(&mut self, cmd: R, data: u8) -> Result<(), E> {
         self.set_user_bank(&cmd, false).await?;
-        self.i2c.write(self.addr, &[cmd.reg(), data]).await
+        self.bus.bus_write(&[cmd.reg(), data]).await
     }
 
     /// Write to a register, but only overwrite the parts corresponding to the flag byte
@@ -397,10 +486,9 @@ where
 
 }
 
-impl<I2C, E> Icm20948<I2C, MagEnabled, Init>
+impl<BUS, E> Icm20948<BUS, MagEnabled, Init, E>
 where
-    I2C: I2c<Error = E>,
-    E: Into<IcmError<E>>,
+    BUS: BusTransfer<E>,
 {
     /// Apply the saved calibration offset+scale to measurement vector
     fn apply_mag_calibration(&self, mag: & mut Vector3<f32>) {
@@ -421,7 +509,7 @@ where
     /// Resets (disables) magnetometer calibration data
     pub fn reset_mag_calibration(&mut self) {
         self.mag_state.is_calibrated = false;
-        self.mag_state.offset = Vector3::from_element(1.);
+        self.mag_state.offset = Vector3::zeros();
         self.mag_state.scale = Vector3::from_element(1.);
     }
 
@@ -466,9 +554,9 @@ where
     }
 }
 
-impl<I2C, E, MAG> Icm20948<I2C, MAG, Init>
+impl<BUS, E, MAG> Icm20948<BUS, MAG, Init, E>
 where
-    I2C: I2c<Error = E>,
+    BUS: BusTransfer<E>,
     E: Into<IcmError<E>>,
 {
 
@@ -553,14 +641,18 @@ where
         }).into();
 
         self.set_user_bank(&Bank2::XgOffsUsrh, false).await?;
-        self.i2c.write(self.addr, &[Bank2::XgOffsUsrh.reg(), xh, xl]).await?;
-        self.i2c.write(self.addr, &[Bank2::YgOffsUsrh.reg(), yh, yl]).await?;
-        self.i2c.write(self.addr, &[Bank2::ZgOffsUsrh.reg(), zh, zl]).await
+
+        self.bus.bus_write(&[Bank2::XgOffsUsrh.reg(), xh, xl]).await?;
+        self.bus.bus_write(&[Bank2::YgOffsUsrh.reg(), yh, yl]).await?;
+        self.bus.bus_write(&[Bank2::ZgOffsUsrh.reg(), zh, zl]).await?;
+
+        Ok(())
      }
-        
+    
+    /// Returns the number of new readings in FIFO buffer
     pub async fn new_data_ready(&mut self) -> u8 {
         if let Ok([byte]) = self.read_from(Bank0::DataRdyStatus).await {
-            byte
+            byte & 0b1111
         } else {0}
     }
 
@@ -604,7 +696,7 @@ fn collect_3xi16_mag(values: [u8; 6]) -> [i16; 3] {
 
     mag
 }
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Icm20948Config {
     pub acc_range: AccelerometerRange,
     pub gyr_range: GyroscopeRange,
@@ -631,7 +723,7 @@ impl Default for Icm20948Config {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum AccelerometerRange {
     Gs2 = 0b00,
     Gs4 = 0b01,
@@ -650,7 +742,7 @@ impl AccelerometerRange {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum GyroscopeRange {
     Dps250 = 0b00,
     Dps500 = 0b01,
@@ -669,7 +761,7 @@ impl GyroscopeRange {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum AccelerometerUnit {
     /// Meters per second squared (m/s^2)
     Mpss,
@@ -686,7 +778,7 @@ impl AccelerometerUnit {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum GyroscopeUnit {
     /// Radians per second
     Rps,
@@ -703,7 +795,7 @@ impl GyroscopeUnit {
     }
 }
 
-#[derive(Copy, Clone,PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum AccelerometerDlp {
     Hz473 = 7,
     Hz246 = 1,
@@ -715,7 +807,7 @@ pub enum AccelerometerDlp {
     Disabled = 8,
 }
 
-#[derive(Copy, Clone,PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum GyroscopeDlp {
     Hz361 = 7,
     Hz196 = 0,
