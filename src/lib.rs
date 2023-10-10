@@ -901,7 +901,6 @@ pub enum GyrDlp {
 #[derive(Debug)]
 pub enum IcmError<E> {
     BusError(E),
-    SpiCsPinError,
     ImuSetupError,
     MagSetupError,
 }
