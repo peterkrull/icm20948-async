@@ -3,7 +3,7 @@
 #![no_std]
 
 use core::marker::PhantomData;
-use embedded_hal_async::{delay::DelayUs,i2c::I2c,spi::SpiBus};
+use embedded_hal_async::{delay::DelayUs,i2c::I2c,spi::SpiDevice};
 use nalgebra::Vector3;
 
 mod reg;
@@ -41,15 +41,13 @@ pub struct Init;
 pub struct NotInit;
 
 // Type to hold bus information for I2c
-pub struct IcmBusI2c<I2C,E> {
+pub struct IcmBusI2c<I2C> {
     bus_inner: I2C,
-    bus_error: PhantomData<E>,
     address: I2cAddress
 }
 // Type to hold bus information for Spi
-pub struct IcmBusSpi<SPI,E> {
+pub struct IcmBusSpi<SPI> {
     bus_inner: SPI,
-    bus_error: PhantomData<E>
 }
 
 // Trait to allow for generic behavior across I2c or Spi usage
@@ -60,7 +58,7 @@ where E: Into<IcmError<E>> {
 }
 
 // Implementation of bus trait for I2c
-impl<I2C,E> BusTransfer<E> for IcmBusI2c<I2C,E>
+impl<I2C,E> BusTransfer<E> for IcmBusI2c<I2C>
 where
     I2C: I2c<Error = E>,
     E: Into<IcmError<E>>,
@@ -75,11 +73,11 @@ where
 }
 
 // Implementation of bus trait for Spi
-impl<SPI,E> BusTransfer<E> for IcmBusSpi<SPI,E>
+impl<SPI,E> BusTransfer<E> for IcmBusSpi<SPI>
 where
-    SPI: SpiBus<Error = E>,
-    E: Into<IcmError<E>>    
-{
+    SPI: SpiDevice<Error = E>,
+    E: Into<IcmError<E>>,
+{ 
     async fn bus_transfer(&mut self, write: &[u8], read: &mut [u8]) -> Result<(),E> {
         self.bus_inner.transfer(read, write).await
     }
@@ -99,7 +97,7 @@ pub struct Icm20948<BUS, MAG, INIT, DELAY, E> {
     bus_error: PhantomData<E>,
 }
 
-impl<BUS, DELAY, E> Icm20948<IcmBusI2c<BUS,E>, MagDisabled, NotInit, DELAY, E>
+impl<BUS, DELAY, E> Icm20948<IcmBusI2c<BUS>, MagDisabled, NotInit, DELAY, E>
 where
     BUS: I2c<Error = E>,
     E: Into<IcmError<E>>,
@@ -107,9 +105,9 @@ where
 {
     /// Creates an uninitialized IMU struct with the given config.
     #[must_use]
-    pub fn new_i2c_from_cfg(bus: BUS, delay: DELAY, cfg: Icm20948Config) -> Icm20948<IcmBusI2c<BUS,E>, MagDisabled, NotInit, DELAY, E> {
+    pub fn new_i2c_from_cfg(bus: BUS, cfg: Icm20948Config, delay: DELAY) -> Icm20948<IcmBusI2c<BUS>, MagDisabled, NotInit, DELAY, E> {
         Self {
-            bus: IcmBusI2c { bus_inner: bus , bus_error: PhantomData::<E>, address: I2cAddress::default() },
+            bus: IcmBusI2c { bus_inner: bus, address: I2cAddress::default() },
             config: cfg,
             user_bank: UserBank::Bank0,
             delay,
@@ -121,22 +119,22 @@ where
 
     /// Creates an uninitialized IMU struct with a default config.
     #[must_use]
-    pub fn new_i2c(bus: BUS, delay: DELAY) -> Icm20948<IcmBusI2c<BUS,E>, MagDisabled, NotInit, DELAY, E> {
-        Self::new_i2c_from_cfg(bus, delay, Icm20948Config::default())
+    pub fn new_i2c(bus: BUS, delay: DELAY) -> Icm20948<IcmBusI2c<BUS>, MagDisabled, NotInit, DELAY, E> {
+        Self::new_i2c_from_cfg(bus, Icm20948Config::default(), delay)
     }
 }
 
-impl<BUS, DELAY, E> Icm20948<IcmBusSpi<BUS,E>, MagDisabled, NotInit, DELAY, E>
+impl<BUS, DELAY, E> Icm20948<IcmBusSpi<BUS>, MagDisabled, NotInit, DELAY, E>
 where
-    BUS: SpiBus<Error = E>,
+    BUS: SpiDevice<Error = E>,
     E: Into<IcmError<E>>,
-    DELAY: DelayUs
+    DELAY: DelayUs,
 {
     /// Creates an uninitialized IMU struct with the given config.
     #[must_use]
-    pub fn new_spi_from_cfg(bus: BUS, delay: DELAY, cfg: Icm20948Config) -> Icm20948<IcmBusSpi<BUS, E>, MagDisabled, NotInit, DELAY, E> {
+    pub fn new_spi_from_cfg(bus: BUS, cfg: Icm20948Config, delay: DELAY) -> Icm20948<IcmBusSpi<BUS>, MagDisabled, NotInit, DELAY, E> {
         Self {
-            bus: IcmBusSpi { bus_inner: bus, bus_error: PhantomData::<E> },
+            bus: IcmBusSpi { bus_inner: bus },
             config: cfg,
             user_bank: UserBank::Bank0,
             mag_state: MagDisabled,
@@ -148,12 +146,12 @@ where
 
     /// Creates an uninitialized IMU struct with a default config.
     #[must_use]
-    pub fn new_spi(bus: BUS, delay: DELAY) -> Icm20948<IcmBusSpi<BUS,E>, MagDisabled, NotInit, DELAY, E> {
-        Self::new_spi_from_cfg(bus, delay, Icm20948Config::default())
+    pub fn new_spi(bus: BUS, delay: DELAY) -> Icm20948<IcmBusSpi<BUS>, MagDisabled, NotInit, DELAY, E> {
+        Self::new_spi_from_cfg(bus, Icm20948Config::default(), delay)
     }
 }
 
-impl<BUS, MAG, DELAY, E> Icm20948<IcmBusI2c<BUS,E>, MAG, Init, DELAY, E>
+impl<BUS, MAG, DELAY, E> Icm20948<IcmBusI2c<BUS>, MAG, Init, DELAY, E>
 where
     BUS: I2c<Error = E>,
     E: Into<IcmError<E>>,
@@ -166,9 +164,9 @@ where
     }
 }
 
-impl<BUS, MAG, DELAY, E> Icm20948<IcmBusSpi<BUS,E>, MAG, Init, DELAY, E>
+impl<BUS, MAG, DELAY, E> Icm20948<IcmBusSpi<BUS>, MAG, Init, DELAY, E>
 where
-    BUS: SpiBus<Error = E>,
+    BUS: SpiDevice<Error = E>,
     E: Into<IcmError<E>>,
     DELAY: DelayUs
 {
@@ -179,7 +177,7 @@ where
     }
 }
 
-impl<BUS, DELAY, E> Icm20948<IcmBusI2c<BUS,E>, MagDisabled, NotInit, DELAY, E>
+impl<BUS, DELAY, E> Icm20948<IcmBusI2c<BUS>, MagDisabled, NotInit, DELAY, E>
 where
     BUS: I2c<Error = E>,
     E: Into<IcmError<E>>,
@@ -187,7 +185,7 @@ where
 {
     /// Set I2C address of ICM module. See `I2cAddress` for defaults, otherwise `u8` implements `Into<I2cAddress>`
     #[must_use]
-    pub fn set_address(self, address: impl Into<I2cAddress>) -> Icm20948<IcmBusI2c<BUS, E>, MagDisabled, NotInit, DELAY, E> {
+    pub fn set_address(self, address: impl Into<I2cAddress>) -> Icm20948<IcmBusI2c<BUS>, MagDisabled, NotInit, DELAY, E> {
         Icm20948 { bus: IcmBusI2c { address: address.into(), ..self.bus }, ..self }
     }
 }
@@ -903,6 +901,7 @@ pub enum GyrDlp {
 #[derive(Debug)]
 pub enum IcmError<E> {
     BusError(E),
+    SpiCsPinError,
     ImuSetupError,
     MagSetupError,
 }
