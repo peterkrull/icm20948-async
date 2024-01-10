@@ -1,9 +1,7 @@
-#![feature(type_changing_struct_update)]
-#![feature(async_fn_in_trait)]
 #![no_std]
 
 use core::marker::PhantomData;
-use embedded_hal_async::{delay::DelayUs,i2c::I2c,spi::SpiDevice};
+use embedded_hal_async::{delay::DelayNs,i2c::I2c,spi::SpiDevice};
 use nalgebra::Vector3;
 
 mod reg;
@@ -34,6 +32,16 @@ pub struct MagEnabled {
     offset: Vector3<f32>,
     scale: Vector3<f32>,
 }
+
+impl MagEnabled {
+    fn uncralibrated() -> Self {
+        Self {
+            is_calibrated: false,
+            offset: Vector3::zeros(),
+            scale: Vector3::from_element(1.),
+        }
+    }
+}
 pub struct MagDisabled;
 
 // Compile-time init states
@@ -51,6 +59,7 @@ pub struct IcmBusSpi<SPI> {
 }
 
 // Trait to allow for generic behavior across I2c or Spi usage
+#[allow(async_fn_in_trait)]
 pub trait BusTransfer <E>
 where E: Into<IcmError<E>> {
     async fn bus_transfer(&mut self, write: &[u8], read: &mut [u8]) -> Result<(),E>;
@@ -91,7 +100,7 @@ pub struct Icm20948<BUS, MAG, INIT, DELAY, E> {
     bus: BUS,
     config: Icm20948Config,
     user_bank: UserBank,
-    delay: DELAY,    
+    delay: DELAY,
     mag_state: MAG,
     init_state: PhantomData<INIT>,
     bus_error: PhantomData<E>,
@@ -101,7 +110,7 @@ impl<BUS, DELAY, E> Icm20948<IcmBusI2c<BUS>, MagDisabled, NotInit, DELAY, E>
 where
     BUS: I2c<Error = E>,
     E: Into<IcmError<E>>,
-    DELAY: DelayUs
+    DELAY: DelayNs
 {
     /// Creates an uninitialized IMU struct with the given config.
     #[must_use]
@@ -128,7 +137,7 @@ impl<BUS, DELAY, E> Icm20948<IcmBusSpi<BUS>, MagDisabled, NotInit, DELAY, E>
 where
     BUS: SpiDevice<Error = E>,
     E: Into<IcmError<E>>,
-    DELAY: DelayUs,
+    DELAY: DelayNs,
 {
     /// Creates an uninitialized IMU struct with the given config.
     #[must_use]
@@ -155,7 +164,7 @@ impl<BUS, MAG, DELAY, E> Icm20948<IcmBusI2c<BUS>, MAG, Init, DELAY, E>
 where
     BUS: I2c<Error = E>,
     E: Into<IcmError<E>>,
-    DELAY: DelayUs
+    DELAY: DelayNs
 {
     /// Consumes the `Icm20948` object and releases the I2c bus back to the user
     #[must_use]
@@ -168,7 +177,7 @@ impl<BUS, MAG, DELAY, E> Icm20948<IcmBusSpi<BUS>, MAG, Init, DELAY, E>
 where
     BUS: SpiDevice<Error = E>,
     E: Into<IcmError<E>>,
-    DELAY: DelayUs
+    DELAY: DelayNs
 {
     /// Consumes the `Icm20948` object and releases the Spi bus back to the user
     #[must_use]
@@ -181,7 +190,7 @@ impl<BUS, DELAY, E> Icm20948<IcmBusI2c<BUS>, MagDisabled, NotInit, DELAY, E>
 where
     BUS: I2c<Error = E>,
     E: Into<IcmError<E>>,
-    DELAY: DelayUs
+    DELAY: DelayNs
 {
     /// Set I2C address of ICM module. See `I2cAddress` for defaults, otherwise `u8` implements `Into<I2cAddress>`
     #[must_use]
@@ -193,7 +202,7 @@ where
 impl<BUS, DELAY, E> Icm20948<BUS, MagDisabled, NotInit, DELAY, E>
 where
     BUS: BusTransfer<E>,
-    DELAY: DelayUs
+    DELAY: DelayNs
 {
     /*
         Configuration methods
@@ -258,7 +267,12 @@ where
         Ok(Icm20948 {
             mag_state: MagDisabled,
             init_state: PhantomData::<Init>,
-            ..self
+            // Carry over remaining fields (until `..self` is stabilized)
+            bus: self.bus,
+            config: self.config,
+            user_bank: self.user_bank,
+            delay: self.delay,
+            bus_error: self.bus_error,
         })
     }
 
@@ -268,13 +282,14 @@ where
         self.setup_mag().await?;
 
         Ok(Icm20948 {
-            mag_state: MagEnabled {
-                is_calibrated: false,
-                offset: Vector3::zeros(),
-                scale: Vector3::from_element(1.),
-            },
+            mag_state: MagEnabled::uncralibrated(),
             init_state: PhantomData::<Init>,
-            ..self
+            // Carry over remaining fields (until `..self` is stabilized)
+            bus: self.bus,
+            config: self.config,
+            user_bank: self.user_bank,
+            delay: self.delay,
+            bus_error: self.bus_error,
         })
     }
 
@@ -285,9 +300,9 @@ where
 
         // Initially set user bank by force, and check identity
         self.set_user_bank(&Bank0::WhoAmI, true).await?;
-        let [id] = self.read_from(Bank0::WhoAmI).await?;
+        let [whoami] = self.read_from(Bank0::WhoAmI).await?;
 
-        if id != 0xEA {
+        if whoami != 0xEA {
             return Err(IcmError::ImuSetupError);
         }
 
@@ -350,7 +365,7 @@ where
 impl<BUS, E, MAG, INIT, DELAY> Icm20948<BUS, MAG, INIT, DELAY, E>
 where
     BUS: BusTransfer<E>,
-    DELAY: DelayUs
+    DELAY: DelayNs
 {
 
     /// Reset accelerometer / gyroscope module
@@ -511,7 +526,7 @@ where
 impl<BUS, DELAY, E> Icm20948<BUS, MagEnabled, Init, DELAY, E>
 where
     BUS: BusTransfer<E>,
-    DELAY: DelayUs
+    DELAY: DelayNs
 {
     /// Apply the saved calibration offset+scale to measurement vector
     fn apply_mag_calibration(&self, mag: & mut Vector3<f32>) {
@@ -581,7 +596,7 @@ impl<BUS, E, MAG, DELAY> Icm20948<BUS, MAG, Init, DELAY, E>
 where
     BUS: BusTransfer<E>,
     E: Into<IcmError<E>>,
-    DELAY: DelayUs
+    DELAY: DelayNs
 {
 
     /// Takes 6 bytes converts them into a Vector3 of floats
@@ -691,9 +706,8 @@ where
 
     /// Returns the number of new readings in FIFO buffer
     pub async fn new_data_ready(&mut self) -> u8 {
-        if let Ok([byte]) = self.read_from(Bank0::DataRdyStatus).await {
-            byte & 0b1111
-        } else {0}
+        self.read_from::<1,_>(Bank0::DataRdyStatus).await
+            .map_or(0, |[b]|b & 0b1111)
     }
 
     /// Returns the scalar corresponding to the unit and range configured

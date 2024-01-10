@@ -15,5 +15,5 @@ keywords = ["embedded","embedded-hal","async","no_std","icm20948"]
 align-mag = []
 
 [dependencies]
-embedded-hal-async = "1.0.0-rc.1"
+embedded-hal-async = "1.0.0"
 nalgebra = {version = ">0.30.0", default-features = false, features = ["libm"]}
