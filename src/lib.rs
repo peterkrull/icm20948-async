@@ -1,7 +1,7 @@
 #![no_std]
 
 use core::marker::PhantomData;
-use embedded_hal_async::{delay::DelayNs,i2c::I2c,spi::SpiDevice};
+use embedded_hal_async::{delay::DelayNs, i2c::I2c, spi::SpiDevice};
 use nalgebra::Vector3;
 
 mod reg;
@@ -11,19 +11,19 @@ const MAGNET_ADDR: u8 = 0x0C; // I2C address of magnetometer
 
 #[derive(Clone, Copy)]
 /// Container for accelerometer and gyroscope measurements
-pub struct Data6Dof {
-    pub acc: Vector3<f32>,
-    pub gyr: Vector3<f32>,
-    pub tmp: f32,
+pub struct Data6Dof<T> {
+    pub acc: Vector3<T>,
+    pub gyr: Vector3<T>,
+    pub tmp: T,
 }
 
 #[derive(Clone, Copy)]
 /// Container for accelerometer, gyroscope and magnetometer measurements
-pub struct Data9Dof {
-    pub acc: Vector3<f32>,
-    pub gyr: Vector3<f32>,
-    pub mag: Vector3<f32>,
-    pub tmp: f32,
+pub struct Data9Dof<T> {
+    pub acc: Vector3<T>,
+    pub gyr: Vector3<T>,
+    pub mag: Vector3<T>,
+    pub tmp: T,
 }
 
 // Compile-time MAG states
@@ -267,7 +267,6 @@ where
         Ok(Icm20948 {
             mag_state: MagDisabled,
             init_state: PhantomData::<Init>,
-            // Carry over remaining fields (until `..self` is stabilized)
             bus: self.bus,
             config: self.config,
             user_bank: self.user_bank,
@@ -284,7 +283,6 @@ where
         Ok(Icm20948 {
             mag_state: MagEnabled::uncralibrated(),
             init_state: PhantomData::<Init>,
-            // Carry over remaining fields (until `..self` is stabilized)
             bus: self.bus,
             config: self.config,
             user_bank: self.user_bank,
@@ -569,7 +567,7 @@ where
     }
 
     /// Get scaled measurement for accelerometer, gyroscope and magnetometer, and temperature
-    pub async fn read_9dof(&mut self) -> Result<Data9Dof, E> {
+    pub async fn read_9dof(&mut self) -> Result<Data9Dof<f32>, E> {
         let raw: [u8; 20] = self.read_from(Bank0::AccelXoutH).await?;
         let [axh, axl, ayh, ayl, azh, azl, gxh, gxl, gyh, gyl, gzh, gzl, tph, tpl, mxl, mxh, myl, myh, mzl, mzh] =
             raw;
@@ -579,6 +577,22 @@ where
         let mag = self.scaled_mag_from_bytes([mxl, mxh, myl, myh, mzl, mzh]);
 
         let tmp = self.scaled_tmp_from_bytes([tph, tpl]);
+
+        Ok(Data9Dof { acc, gyr, mag, tmp })
+    }
+
+
+    /// Get unscaled measurements for accelerometer and gyroscope, and temperature
+    pub async fn read_9dof_unscaled(&mut self) -> Result<Data9Dof<i16>, E> {
+        let raw: [u8; 20] = self.read_from(Bank0::AccelXoutH).await?;
+        let [axh, axl, ayh, ayl, azh, azl, gxh, gxl, gyh, gyl, gzh, gzl, tph, tpl, mxl, mxh, myl, myh, mzl, mzh] =
+            raw;
+
+        let acc = collect_3xi16([axh, axl, ayh, ayl, azh, azl]).into();
+        let gyr = collect_3xi16([gxh, gxl, gyh, gyl, gzh, gzl]).into();
+        let mag = collect_3xi16_mag([mxl, mxh, myl, myh, mzl, mzh]).into();
+
+        let tmp = i16::from_be_bytes([tph, tpl]);
 
         Ok(Data9Dof { acc, gyr, mag, tmp })
     }
@@ -647,7 +661,7 @@ where
     }
 
     /// Get scaled measurements for accelerometer and gyroscope, and temperature
-    pub async fn read_6dof(&mut self) -> Result<Data6Dof, E> {
+    pub async fn read_6dof(&mut self) -> Result<Data6Dof<f32>, E> {
         let raw: [u8; 14] = self.read_from(Bank0::AccelXoutH).await?;
         let [axh, axl, ayh, ayl, azh, azl, gxh, gxl, gyh, gyl, gzh, gzl, tph, tpl] = raw;
 
@@ -658,6 +672,21 @@ where
 
         Ok(Data6Dof { acc, gyr, tmp })
     }
+
+
+    /// Get unscaled measurements for accelerometer and gyroscope, and temperature
+    pub async fn read_6dof_unscaled(&mut self) -> Result<Data6Dof<i16>, E> {
+        let raw: [u8; 14] = self.read_from(Bank0::AccelXoutH).await?;
+        let [axh, axl, ayh, ayl, azh, azl, gxh, gxl, gyh, gyl, gzh, gzl, tph, tpl] = raw;
+
+        let acc = collect_3xi16([axh, axl, ayh, ayl, azh, azl]).into();
+        let gyr = collect_3xi16([gxh, gxl, gyh, gyl, gzh, gzl]).into();
+
+        let tmp = i16::from_be_bytes([tph, tpl]);
+
+        Ok(Data6Dof { acc, gyr, tmp })
+    }
+
 
     /// Collects and averages `num` sampels for gyro calibration and saves them on-chip
     pub async fn gyr_calibrate(& mut self, num : usize) -> Result<() ,E> {
