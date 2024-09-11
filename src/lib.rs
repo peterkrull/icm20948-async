@@ -62,6 +62,8 @@ pub struct IcmBusSpi<SPI> {
 #[allow(async_fn_in_trait)]
 pub trait BusTransfer <E>
 where E: Into<IcmError<E>> {
+    type Inner;
+    fn destroy(self) -> Self::Inner;
     async fn bus_transfer(&mut self, write: &[u8], read: &mut [u8]) -> Result<(),E>;
     async fn bus_write(&mut self, write: &[u8]) -> Result<(),E>;
 }
@@ -72,6 +74,12 @@ where
     I2C: I2c<Error = E>,
     E: Into<IcmError<E>>,
 {
+    type Inner = I2C;
+
+    fn destroy(self) -> Self::Inner {
+        self.bus_inner
+    }
+
     async fn bus_transfer(&mut self, write: &[u8], read: &mut [u8]) -> Result<(),E> {
         self.bus_inner.write_read(self.address.get(), write, read).await
     }
@@ -87,6 +95,12 @@ where
     SPI: SpiDevice<Error = E>,
     E: Into<IcmError<E>>,
 { 
+    type Inner = SPI;
+    
+    fn destroy(self) -> Self::Inner {
+        self.bus_inner
+    }
+
     async fn bus_transfer(&mut self, write: &[u8], read: &mut [u8]) -> Result<(),E> {
         self.bus_inner.transfer(read, write).await
     }
@@ -160,19 +174,11 @@ where
     }
 }
 
-impl<BUS, MAG, INIT, DELAY, E> Icm20948<IcmBusI2c<BUS>, MAG, INIT, DELAY, E> {
-    /// Consumes the `Icm20948` object and releases the I2c bus back to the user
+impl<BUS: BusTransfer<E>, MAG, INIT, DELAY, E> Icm20948<BUS, MAG, INIT, DELAY, E> {
+    /// Consumes the `Icm20948` and releases the bus back to the user
     #[must_use]
-    pub fn destroy(self) -> BUS {
-        self.bus.bus_inner
-    }
-}
-
-impl<BUS, MAG, INIT, DELAY, E> Icm20948<IcmBusSpi<BUS>, MAG, INIT, DELAY, E> {
-    /// Consumes the `Icm20948` object and releases the Spi bus back to the user
-    #[must_use]
-    pub fn destroy(self) -> BUS {
-        self.bus.bus_inner
+    pub fn destroy(self) -> BUS::Inner {
+        self.bus.destroy()
     }
 }
 
@@ -192,7 +198,8 @@ where
 impl<BUS, DELAY, E> Icm20948<BUS, MagDisabled, NotInit, DELAY, E>
 where
     BUS: BusTransfer<E>,
-    DELAY: DelayNs
+    DELAY: DelayNs,
+    BUS: BusTransfer<E>
 {
     /*
         Configuration methods
@@ -251,34 +258,41 @@ where
     */
 
     /// Initializes the IMU with accelerometer and gyroscope
-    pub async fn initialize_6dof(mut self) -> Result<Icm20948<BUS, MagDisabled, Init, DELAY, E>, IcmError<E>> {
-        self.setup_acc_gyr().await?;
-
-        Ok(Icm20948 {
-            mag_state: MagDisabled,
-            init_state: PhantomData::<Init>,
-            bus: self.bus,
-            config: self.config,
-            user_bank: self.user_bank,
-            delay: self.delay,
-            bus_error: self.bus_error,
-        })
+    pub async fn initialize_6dof(mut self) -> Result<Icm20948<BUS, MagDisabled, Init, DELAY, E>, (IcmError<E>, BUS::Inner)> {
+        match self.setup_acc_gyr().await {
+            Ok(_) => 
+            Ok(Icm20948 {
+                mag_state: MagDisabled,
+                init_state: PhantomData::<Init>,
+                bus: self.bus,
+                config: self.config,
+                user_bank: self.user_bank,
+                delay: self.delay,
+                bus_error: PhantomData,
+            }),
+            Err(e) => Err((e, self.destroy())),
+        }
     }
 
     /// Initializes the IMU with accelerometer, gyroscope and magnetometer
-    pub async fn initialize_9dof(mut self) -> Result<Icm20948<BUS, MagEnabled, Init, DELAY, E>, IcmError<E>> {
-        self.setup_acc_gyr().await?;
-        self.setup_mag().await?;
+    pub async fn initialize_9dof(mut self) -> Result<Icm20948<BUS, MagEnabled, Init, DELAY, E>, (IcmError<E>, BUS::Inner)> {
+        let setup = async {
+            self.setup_acc_gyr().await?;
+            self.setup_mag().await
+        };
 
-        Ok(Icm20948 {
-            mag_state: MagEnabled::uncralibrated(),
-            init_state: PhantomData::<Init>,
-            bus: self.bus,
-            config: self.config,
-            user_bank: self.user_bank,
-            delay: self.delay,
-            bus_error: self.bus_error,
-        })
+        match setup.await {
+            Ok(_) => Ok(Icm20948 {
+                mag_state: MagEnabled::uncralibrated(),
+                init_state: PhantomData::<Init>,
+                bus: self.bus,
+                config: self.config,
+                user_bank: self.user_bank,
+                delay: self.delay,
+                bus_error: self.bus_error,
+            }),
+            Err(e) => Err((e, self.destroy())),
+        }
     }
 
     /// Setup accelerometer and gyroscope according to config
