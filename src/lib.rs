@@ -160,12 +160,7 @@ where
     }
 }
 
-impl<BUS, MAG, DELAY, E> Icm20948<IcmBusI2c<BUS>, MAG, Init, DELAY, E>
-where
-    BUS: I2c<Error = E>,
-    E: Into<IcmError<E>>,
-    DELAY: DelayNs
-{
+impl<BUS, MAG, INIT, DELAY, E> Icm20948<IcmBusI2c<BUS>, MAG, INIT, DELAY, E> {
     /// Consumes the `Icm20948` object and releases the I2c bus back to the user
     #[must_use]
     pub fn destroy(self) -> BUS {
@@ -173,12 +168,7 @@ where
     }
 }
 
-impl<BUS, MAG, DELAY, E> Icm20948<IcmBusSpi<BUS>, MAG, Init, DELAY, E>
-where
-    BUS: SpiDevice<Error = E>,
-    E: Into<IcmError<E>>,
-    DELAY: DelayNs
-{
+impl<BUS, MAG, INIT, DELAY, E> Icm20948<IcmBusSpi<BUS>, MAG, INIT, DELAY, E> {
     /// Consumes the `Icm20948` object and releases the Spi bus back to the user
     #[must_use]
     pub fn destroy(self) -> BUS {
