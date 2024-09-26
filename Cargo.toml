@@ -13,7 +13,14 @@ keywords = ["embedded", "embedded-hal", "async", "no_std", "icm20948"]
 
 [features]
 align-mag = []
+serde = ["dep:serde"]
 
 [dependencies]
 embedded-hal-async = "1.0.0"
-nalgebra = {version = ">0.30.0", default-features = false, features = ["libm"]}
+nalgebra = { version = ">0.30.0", default-features = false, features = [
+    "libm",
+] }
+
+serde = { version = "1.0.*", default-features = false, features = [
+    "derive",
+], optional = true }

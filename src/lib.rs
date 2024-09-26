@@ -51,7 +51,7 @@ pub struct NotInit;
 // Type to hold bus information for I2c
 pub struct IcmBusI2c<I2C> {
     bus_inner: I2C,
-    address: I2cAddress
+    address: I2cAddress,
 }
 // Type to hold bus information for Spi
 pub struct IcmBusSpi<SPI> {
@@ -60,16 +60,18 @@ pub struct IcmBusSpi<SPI> {
 
 // Trait to allow for generic behavior across I2c or Spi usage
 #[allow(async_fn_in_trait)]
-pub trait BusTransfer <E>
-where E: Into<IcmError<E>> {
+pub trait BusTransfer<E>
+where
+    E: Into<IcmError<E>>,
+{
     type Inner;
     fn destroy(self) -> Self::Inner;
-    async fn bus_transfer(&mut self, write: &[u8], read: &mut [u8]) -> Result<(),E>;
-    async fn bus_write(&mut self, write: &[u8]) -> Result<(),E>;
+    async fn bus_transfer(&mut self, write: &[u8], read: &mut [u8]) -> Result<(), E>;
+    async fn bus_write(&mut self, write: &[u8]) -> Result<(), E>;
 }
 
 // Implementation of bus trait for I2c
-impl<I2C,E> BusTransfer<E> for IcmBusI2c<I2C>
+impl<I2C, E> BusTransfer<E> for IcmBusI2c<I2C>
 where
     I2C: I2c<Error = E>,
     E: Into<IcmError<E>>,
@@ -80,32 +82,34 @@ where
         self.bus_inner
     }
 
-    async fn bus_transfer(&mut self, write: &[u8], read: &mut [u8]) -> Result<(),E> {
-        self.bus_inner.write_read(self.address.get(), write, read).await
+    async fn bus_transfer(&mut self, write: &[u8], read: &mut [u8]) -> Result<(), E> {
+        self.bus_inner
+            .write_read(self.address.get(), write, read)
+            .await
     }
 
-    async fn bus_write(&mut self, write: &[u8]) -> Result<(),E> {
+    async fn bus_write(&mut self, write: &[u8]) -> Result<(), E> {
         self.bus_inner.write(self.address.get(), write).await
     }
 }
 
 // Implementation of bus trait for Spi
-impl<SPI,E> BusTransfer<E> for IcmBusSpi<SPI>
+impl<SPI, E> BusTransfer<E> for IcmBusSpi<SPI>
 where
     SPI: SpiDevice<Error = E>,
     E: Into<IcmError<E>>,
-{ 
+{
     type Inner = SPI;
-    
+
     fn destroy(self) -> Self::Inner {
         self.bus_inner
     }
 
-    async fn bus_transfer(&mut self, write: &[u8], read: &mut [u8]) -> Result<(),E> {
+    async fn bus_transfer(&mut self, write: &[u8], read: &mut [u8]) -> Result<(), E> {
         self.bus_inner.transfer(read, write).await
     }
 
-    async fn bus_write(&mut self, write: &[u8]) -> Result<(),E> {
+    async fn bus_write(&mut self, write: &[u8]) -> Result<(), E> {
         self.bus_inner.write(write).await
     }
 }
@@ -124,13 +128,20 @@ impl<BUS, DELAY, E> Icm20948<IcmBusI2c<BUS>, MagDisabled, NotInit, DELAY, E>
 where
     BUS: I2c<Error = E>,
     E: Into<IcmError<E>>,
-    DELAY: DelayNs
+    DELAY: DelayNs,
 {
     /// Creates an uninitialized IMU struct with the given config.
     #[must_use]
-    pub fn new_i2c_from_cfg(bus: BUS, cfg: Icm20948Config, delay: DELAY) -> Icm20948<IcmBusI2c<BUS>, MagDisabled, NotInit, DELAY, E> {
+    pub fn new_i2c_from_cfg(
+        bus: BUS,
+        cfg: Icm20948Config,
+        delay: DELAY,
+    ) -> Icm20948<IcmBusI2c<BUS>, MagDisabled, NotInit, DELAY, E> {
         Self {
-            bus: IcmBusI2c { bus_inner: bus, address: I2cAddress::default() },
+            bus: IcmBusI2c {
+                bus_inner: bus,
+                address: I2cAddress::default(),
+            },
             config: cfg,
             user_bank: UserBank::Bank0,
             delay,
@@ -142,7 +153,10 @@ where
 
     /// Creates an uninitialized IMU struct with a default config.
     #[must_use]
-    pub fn new_i2c(bus: BUS, delay: DELAY) -> Icm20948<IcmBusI2c<BUS>, MagDisabled, NotInit, DELAY, E> {
+    pub fn new_i2c(
+        bus: BUS,
+        delay: DELAY,
+    ) -> Icm20948<IcmBusI2c<BUS>, MagDisabled, NotInit, DELAY, E> {
         Self::new_i2c_from_cfg(bus, Icm20948Config::default(), delay)
     }
 }
@@ -155,7 +169,11 @@ where
 {
     /// Creates an uninitialized IMU struct with the given config.
     #[must_use]
-    pub fn new_spi_from_cfg(bus: BUS, cfg: Icm20948Config, delay: DELAY) -> Icm20948<IcmBusSpi<BUS>, MagDisabled, NotInit, DELAY, E> {
+    pub fn new_spi_from_cfg(
+        bus: BUS,
+        cfg: Icm20948Config,
+        delay: DELAY,
+    ) -> Icm20948<IcmBusSpi<BUS>, MagDisabled, NotInit, DELAY, E> {
         Self {
             bus: IcmBusSpi { bus_inner: bus },
             config: cfg,
@@ -169,7 +187,10 @@ where
 
     /// Creates an uninitialized IMU struct with a default config.
     #[must_use]
-    pub fn new_spi(bus: BUS, delay: DELAY) -> Icm20948<IcmBusSpi<BUS>, MagDisabled, NotInit, DELAY, E> {
+    pub fn new_spi(
+        bus: BUS,
+        delay: DELAY,
+    ) -> Icm20948<IcmBusSpi<BUS>, MagDisabled, NotInit, DELAY, E> {
         Self::new_spi_from_cfg(bus, Icm20948Config::default(), delay)
     }
 }
@@ -186,12 +207,21 @@ impl<BUS, DELAY, E> Icm20948<IcmBusI2c<BUS>, MagDisabled, NotInit, DELAY, E>
 where
     BUS: I2c<Error = E>,
     E: Into<IcmError<E>>,
-    DELAY: DelayNs
+    DELAY: DelayNs,
 {
     /// Set I2C address of ICM module. See `I2cAddress` for defaults, otherwise `u8` implements `Into<I2cAddress>`
     #[must_use]
-    pub fn set_address(self, address: impl Into<I2cAddress>) -> Icm20948<IcmBusI2c<BUS>, MagDisabled, NotInit, DELAY, E> {
-        Icm20948 { bus: IcmBusI2c { address: address.into(), ..self.bus }, ..self }
+    pub fn set_address(
+        self,
+        address: impl Into<I2cAddress>,
+    ) -> Icm20948<IcmBusI2c<BUS>, MagDisabled, NotInit, DELAY, E> {
+        Icm20948 {
+            bus: IcmBusI2c {
+                address: address.into(),
+                ..self.bus
+            },
+            ..self
+        }
     }
 }
 
@@ -199,7 +229,7 @@ impl<BUS, DELAY, E> Icm20948<BUS, MagDisabled, NotInit, DELAY, E>
 where
     BUS: BusTransfer<E>,
     DELAY: DelayNs,
-    BUS: BusTransfer<E>
+    BUS: BusTransfer<E>,
 {
     /*
         Configuration methods
@@ -208,49 +238,97 @@ where
     /// Set accelerometer measuring range, choises are 2G, 4G, 8G or 16G
     #[must_use]
     pub fn acc_range(self, acc_range: AccRange) -> Icm20948<BUS, MagDisabled, NotInit, DELAY, E> {
-        Icm20948 { config: Icm20948Config { acc_range, ..self.config }, ..self }
+        Icm20948 {
+            config: Icm20948Config {
+                acc_range,
+                ..self.config
+            },
+            ..self
+        }
     }
 
     /// Set accelerometer digital lowpass filter frequency
     #[must_use]
     pub fn acc_dlp(self, acc_dlp: AccDlp) -> Icm20948<BUS, MagDisabled, NotInit, DELAY, E> {
-        Icm20948 { config: Icm20948Config { acc_dlp, ..self.config },..self }
+        Icm20948 {
+            config: Icm20948Config {
+                acc_dlp,
+                ..self.config
+            },
+            ..self
+        }
     }
 
     /// Set returned unit of accelerometer measurement, choises are Gs or m/s^2
     #[must_use]
     pub fn acc_unit(self, acc_unit: AccUnit) -> Icm20948<BUS, MagDisabled, NotInit, DELAY, E> {
-        Icm20948 { config: Icm20948Config { acc_unit, ..self.config }, ..self }
+        Icm20948 {
+            config: Icm20948Config {
+                acc_unit,
+                ..self.config
+            },
+            ..self
+        }
     }
 
     /// Set accelerometer output data rate
     #[must_use]
     pub fn acc_odr(self, acc_odr: u16) -> Icm20948<BUS, MagDisabled, NotInit, DELAY, E> {
-        Icm20948 { config: Icm20948Config { acc_odr, ..self.config }, ..self }
+        Icm20948 {
+            config: Icm20948Config {
+                acc_odr,
+                ..self.config
+            },
+            ..self
+        }
     }
 
     /// Set gyroscope measuring range, choises are 250Dps, 500Dps, 1000Dps and 2000Dps
     #[must_use]
     pub fn gyr_range(self, gyr_range: GyrRange) -> Icm20948<BUS, MagDisabled, NotInit, DELAY, E> {
-        Icm20948 { config: Icm20948Config { gyr_range, ..self.config }, ..self }
+        Icm20948 {
+            config: Icm20948Config {
+                gyr_range,
+                ..self.config
+            },
+            ..self
+        }
     }
 
     /// Set gyroscope digital low pass filter frequency
     #[must_use]
     pub fn gyr_dlp(self, gyr_dlp: GyrDlp) -> Icm20948<BUS, MagDisabled, NotInit, DELAY, E> {
-        Icm20948 { config: Icm20948Config { gyr_dlp, ..self.config }, ..self }
+        Icm20948 {
+            config: Icm20948Config {
+                gyr_dlp,
+                ..self.config
+            },
+            ..self
+        }
     }
 
     /// Set returned unit of gyroscope measurement, choises are degrees/s or radians/s
     #[must_use]
     pub fn gyr_unit(self, gyr_unit: GyrUnit) -> Icm20948<BUS, MagDisabled, NotInit, DELAY, E> {
-        Icm20948 { config: Icm20948Config { gyr_unit, ..self.config }, ..self }
+        Icm20948 {
+            config: Icm20948Config {
+                gyr_unit,
+                ..self.config
+            },
+            ..self
+        }
     }
 
     /// Set gyroscope output data rate
     #[must_use]
     pub fn gyr_odr(self, gyr_odr: u8) -> Icm20948<BUS, MagDisabled, NotInit, DELAY, E> {
-        Icm20948 { config: Icm20948Config { gyr_odr, ..self.config }, ..self }
+        Icm20948 {
+            config: Icm20948Config {
+                gyr_odr,
+                ..self.config
+            },
+            ..self
+        }
     }
 
     /*
@@ -258,10 +336,11 @@ where
     */
 
     /// Initializes the IMU with accelerometer and gyroscope
-    pub async fn initialize_6dof(mut self) -> Result<Icm20948<BUS, MagDisabled, Init, DELAY, E>, (IcmError<E>, BUS::Inner)> {
+    pub async fn initialize_6dof(
+        mut self,
+    ) -> Result<Icm20948<BUS, MagDisabled, Init, DELAY, E>, (IcmError<E>, BUS::Inner)> {
         match self.setup_acc_gyr().await {
-            Ok(_) => 
-            Ok(Icm20948 {
+            Ok(_) => Ok(Icm20948 {
                 mag_state: MagDisabled,
                 init_state: PhantomData::<Init>,
                 bus: self.bus,
@@ -275,7 +354,9 @@ where
     }
 
     /// Initializes the IMU with accelerometer, gyroscope and magnetometer
-    pub async fn initialize_9dof(mut self) -> Result<Icm20948<BUS, MagEnabled, Init, DELAY, E>, (IcmError<E>, BUS::Inner)> {
+    pub async fn initialize_9dof(
+        mut self,
+    ) -> Result<Icm20948<BUS, MagEnabled, Init, DELAY, E>, (IcmError<E>, BUS::Inner)> {
         let setup = async {
             self.setup_acc_gyr().await?;
             self.setup_mag().await
@@ -328,7 +409,6 @@ where
 
     /// Setup magnetometer in continuous mode
     async fn setup_mag(&mut self) -> Result<(), IcmError<E>> {
-
         // Ensure known-good state
         self.mag_reset().await?;
 
@@ -355,7 +435,8 @@ where
         self.mag_write_to(MagBank::Control2.reg(), 0b01000).await?;
 
         // Set slave register to read from
-        self.write_to(Bank3::I2cSlv0Reg, MagBank::XDataLow.reg()).await?;
+        self.write_to(Bank3::I2cSlv0Reg, MagBank::XDataLow.reg())
+            .await?;
 
         // Set expected read size
         self.write_to(Bank3::I2cSlv0Ctrl, 1 << 7 | 8).await?;
@@ -367,9 +448,8 @@ where
 impl<BUS, E, MAG, INIT, DELAY> Icm20948<BUS, MAG, INIT, DELAY, E>
 where
     BUS: BusTransfer<E>,
-    DELAY: DelayNs
+    DELAY: DelayNs,
 {
-
     /// Reset accelerometer / gyroscope module
     pub async fn device_reset(&mut self) -> Result<(), E> {
         self.delay.delay_ms(20).await;
@@ -380,7 +460,8 @@ where
 
     /// Enables main ICM module to act as I2C master (eg. for magnetometer)
     async fn enable_i2c_master(&mut self, enable: bool) -> Result<(), E> {
-        self.write_to_flag(Bank0::UserCtrl, u8::from(enable) << 5, 1 << 5).await
+        self.write_to_flag(Bank0::UserCtrl, u8::from(enable) << 5, 1 << 5)
+            .await
     }
 
     /// Resets I2C master module
@@ -391,17 +472,22 @@ where
     /// Ensure correct user bank for given register
     async fn set_user_bank<R: Register + Copy>(&mut self, bank: &R, force: bool) -> Result<(), E> {
         if (self.user_bank != bank.bank()) || force {
-            self.bus.bus_write(&[REG_BANK_SEL, (bank.bank() as u8) << 4]).await?;
+            self.bus
+                .bus_write(&[REG_BANK_SEL, (bank.bank() as u8) << 4])
+                .await?;
             self.user_bank = bank.bank();
         }
         Ok(())
     }
 
     /// Read a const number `N` of bytes from the requested register
-    async fn read_from<const N: usize, R: Register + Copy>(&mut self, cmd: R) -> Result<[u8; N], E> {
+    async fn read_from<const N: usize, R: Register + Copy>(
+        &mut self,
+        cmd: R,
+    ) -> Result<[u8; N], E> {
         let mut buf = [0u8; N];
         self.set_user_bank(&cmd, false).await?;
-        self.bus.bus_transfer(&[cmd.reg()],&mut buf) .await?;
+        self.bus.bus_transfer(&[cmd.reg()], &mut buf).await?;
         Ok(buf)
     }
 
@@ -496,45 +582,48 @@ where
     /// Set (or disable) accelerometer digital low-pass filter
     pub async fn set_acc_dlp(&mut self, acc_dlp: AccDlp) -> Result<(), E> {
         if AccDlp::Disabled == acc_dlp {
-            self.write_to_flag(Bank2::AccelConfig, 0u8, 0b0011_1001).await
+            self.write_to_flag(Bank2::AccelConfig, 0u8, 0b0011_1001)
+                .await
         } else {
-            self.write_to_flag(Bank2::AccelConfig, (acc_dlp as u8) << 3 | 1, 0b0011_1001).await
+            self.write_to_flag(Bank2::AccelConfig, (acc_dlp as u8) << 3 | 1, 0b0011_1001)
+                .await
         }
     }
 
     /// Set (or disable) gyroscope digital low-pass filter
     pub async fn set_gyr_dlp(&mut self, gyr_dlp: GyrDlp) -> Result<(), E> {
         if GyrDlp::Disabled == gyr_dlp {
-            self.write_to_flag(Bank2::GyroConfig1, 0u8, 0b0011_1001).await
+            self.write_to_flag(Bank2::GyroConfig1, 0u8, 0b0011_1001)
+                .await
         } else {
-            self.write_to_flag(Bank2::GyroConfig1, (gyr_dlp as u8) << 3 | 1, 0b0011_1001).await
+            self.write_to_flag(Bank2::GyroConfig1, (gyr_dlp as u8) << 3 | 1, 0b0011_1001)
+                .await
         }
     }
 
-        /// Set accelerometer output data rate. Value will be clamped above 4095.
-        pub async fn set_acc_odr(&mut self, acc_odr: u16) -> Result<(), E> {
-            let [msb,lsb] = acc_odr.clamp(0, 0xFFF).to_be_bytes();
-            self.write_to(Bank2::AccelSmplrtDiv1, msb).await?;
-            self.write_to(Bank2::AccelSmplrtDiv2, lsb).await
-        }
+    /// Set accelerometer output data rate. Value will be clamped above 4095.
+    pub async fn set_acc_odr(&mut self, acc_odr: u16) -> Result<(), E> {
+        let [msb, lsb] = acc_odr.clamp(0, 0xFFF).to_be_bytes();
+        self.write_to(Bank2::AccelSmplrtDiv1, msb).await?;
+        self.write_to(Bank2::AccelSmplrtDiv2, lsb).await
+    }
 
-        /// Set gyroscope output data rate.
-        pub async fn set_gyr_odr(&mut self, gyr_odr: u8) -> Result<(), E> {
-            self.write_to(Bank2::GyroSmplrtDiv, gyr_odr).await
-        }
-
+    /// Set gyroscope output data rate.
+    pub async fn set_gyr_odr(&mut self, gyr_odr: u8) -> Result<(), E> {
+        self.write_to(Bank2::GyroSmplrtDiv, gyr_odr).await
+    }
 }
 
 impl<BUS, DELAY, E> Icm20948<BUS, MagEnabled, Init, DELAY, E>
 where
     BUS: BusTransfer<E>,
-    DELAY: DelayNs
+    DELAY: DelayNs,
 {
     /// Apply the saved calibration offset+scale to measurement vector
-    fn apply_mag_calibration(&self, mag: & mut Vector3<f32>) {
+    fn apply_mag_calibration(&self, mag: &mut Vector3<f32>) {
         if self.mag_state.is_calibrated {
-            *mag = mag.zip_zip_map(&self.mag_state.offset,&self.mag_state.scale, |m,o,s| {
-                ( m - o ) / s
+            *mag = mag.zip_zip_map(&self.mag_state.offset, &self.mag_state.scale, |m, o, s| {
+                (m - o) / s
             });
         }
     }
@@ -555,8 +644,7 @@ where
 
     /// Get vector of scaled magnetometer values
     pub async fn read_mag(&mut self) -> Result<Vector3<f32>, E> {
-        let mut mag = self.read_mag_unscaled().await?
-        .map(|x| (x as f32)).into();
+        let mut mag = self.read_mag_unscaled().await?.map(|x| (x as f32)).into();
         self.apply_mag_calibration(&mut mag);
 
         Ok(mag)
@@ -585,7 +673,6 @@ where
         Ok(Data9Dof { acc, gyr, mag, tmp })
     }
 
-
     /// Get unscaled measurements for accelerometer and gyroscope, and temperature
     pub async fn read_9dof_unscaled(&mut self) -> Result<Data9Dof<i16>, E> {
         let raw: [u8; 20] = self.read_from(Bank0::AccelXoutH).await?;
@@ -603,8 +690,7 @@ where
 
     /// Takes 6 bytes converts them into a Vector3 of floats, unit is micro tesla
     fn scaled_mag_from_bytes(&self, bytes: [u8; 6]) -> Vector3<f32> {
-        let mut mag = collect_3xi16_mag(bytes)
-        .map(|x| (0.15 * x as f32)).into();
+        let mut mag = collect_3xi16_mag(bytes).map(|x| (0.15 * x as f32)).into();
         self.apply_mag_calibration(&mut mag);
         mag
     }
@@ -614,9 +700,8 @@ impl<BUS, E, MAG, DELAY> Icm20948<BUS, MAG, Init, DELAY, E>
 where
     BUS: BusTransfer<E>,
     E: Into<IcmError<E>>,
-    DELAY: DelayNs
+    DELAY: DelayNs,
 {
-
     /// Takes 6 bytes converts them into a Vector3 of floats
     fn scaled_acc_from_bytes(&self, bytes: [u8; 6]) -> Vector3<f32> {
         let acc = collect_3xi16(bytes).map(|x| f32::from(x) * self.acc_scalar());
@@ -677,7 +762,6 @@ where
         Ok(Data6Dof { acc, gyr, tmp })
     }
 
-
     /// Get unscaled measurements for accelerometer and gyroscope, and temperature
     pub async fn read_6dof_unscaled(&mut self) -> Result<Data6Dof<i16>, E> {
         let raw: [u8; 14] = self.read_from(Bank0::AccelXoutH).await?;
@@ -691,41 +775,42 @@ where
         Ok(Data6Dof { acc, gyr, tmp })
     }
 
-
     /// Collects and averages `num` sampels for gyro calibration and saves them on-chip
-    pub async fn gyr_calibrate(& mut self, num : usize) -> Result<() ,E> {
-
+    pub async fn gyr_calibrate(&mut self, num: usize) -> Result<(), E> {
         let mut offset: Vector3<i32> = Vector3::default();
         for _ in 0..num {
-            offset += self.read_gyr_unscaled().await?.map(|x|{
-                x as i32
-            });
+            offset += self.read_gyr_unscaled().await?.map(|x| x as i32);
             self.delay.delay_ms(10).await;
         }
 
-        self.set_gyr_offsets(offset.map(|x|{ x / num as i32 } as i16)).await
+        self.set_gyr_offsets(offset.map(|x| { x / num as i32 } as i16))
+            .await
     }
 
     /// Set gyroscope calibration offsets by writing them to the IMU
-    pub async fn set_gyr_offsets(&mut self, offsets: Vector3<i16>) -> Result<(),E> {
-        let [[xh,xl],[yh,yl],[zh,zl]] : [[u8;2];3] = offsets.map(|x|{
-            (-x).to_be_bytes()
-        }).into();
+    pub async fn set_gyr_offsets(&mut self, offsets: Vector3<i16>) -> Result<(), E> {
+        let [[xh, xl], [yh, yl], [zh, zl]]: [[u8; 2]; 3] =
+            offsets.map(|x| (-x).to_be_bytes()).into();
 
         self.set_user_bank(&Bank2::XgOffsUsrh, false).await?;
 
-        self.bus.bus_write(&[Bank2::XgOffsUsrh.reg(), xh, xl]).await?;
-        self.bus.bus_write(&[Bank2::YgOffsUsrh.reg(), yh, yl]).await?;
-        self.bus.bus_write(&[Bank2::ZgOffsUsrh.reg(), zh, zl]).await?;
+        self.bus
+            .bus_write(&[Bank2::XgOffsUsrh.reg(), xh, xl])
+            .await?;
+        self.bus
+            .bus_write(&[Bank2::YgOffsUsrh.reg(), yh, yl])
+            .await?;
+        self.bus
+            .bus_write(&[Bank2::ZgOffsUsrh.reg(), zh, zl])
+            .await?;
 
         Ok(())
     }
-    
+
     /// Set accelerometer calibration offsets by writing them to the IMU
-    pub async fn set_acc_offsets(&mut self, offsets: Vector3<i16>) -> Result<(),E> {
-        let [[xh,xl],[yh,yl],[zh,zl]] : [[u8;2];3] = offsets.map(|x|{
-            (-x).to_be_bytes()
-        }).into();
+    pub async fn set_acc_offsets(&mut self, offsets: Vector3<i16>) -> Result<(), E> {
+        let [[xh, xl], [yh, yl], [zh, zl]]: [[u8; 2]; 3] =
+            offsets.map(|x| (-x).to_be_bytes()).into();
 
         self.set_user_bank(&Bank2::XgOffsUsrh, false).await?;
 
@@ -735,12 +820,12 @@ where
 
         Ok(())
     }
-    
 
     /// Returns the number of new readings in FIFO buffer
     pub async fn new_data_ready(&mut self) -> u8 {
-        self.read_from::<1,_>(Bank0::DataRdyStatus).await
-            .map_or(0, |[b]|b & 0b1111)
+        self.read_from::<1, _>(Bank0::DataRdyStatus)
+            .await
+            .map_or(0, |[b]| b & 0b1111)
     }
 
     /// Returns the scalar corresponding to the unit and range configured
@@ -752,7 +837,6 @@ where
     fn gyr_scalar(&self) -> f32 {
         self.config.gyr_unit.scalar() / self.config.gyr_range.divisor()
     }
-
 }
 
 /// Collects 6 bytes into a vector of i16 values (acc/gyr only)
@@ -783,7 +867,9 @@ fn collect_3xi16_mag(values: [u8; 6]) -> [i16; 3] {
 
     mag
 }
+
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Icm20948Config {
     pub acc_range: AccRange,
     pub gyr_range: GyrRange,
@@ -800,12 +886,12 @@ impl Default for Icm20948Config {
         Self {
             acc_range: AccRange::Gs2,
             gyr_range: GyrRange::Dps1000,
-            acc_unit:  AccUnit::Gs,
-            gyr_unit:  GyrUnit::Dps,
-            acc_dlp:   AccDlp::Disabled,
-            gyr_dlp:   GyrDlp::Disabled,
-            acc_odr:   Default::default(),
-            gyr_odr:   Default::default(),
+            acc_unit: AccUnit::Gs,
+            gyr_unit: GyrUnit::Dps,
+            acc_dlp: AccDlp::Disabled,
+            gyr_dlp: GyrDlp::Disabled,
+            acc_odr: 0,
+            gyr_odr: 0,
         }
     }
 }
@@ -827,7 +913,7 @@ impl From<u8> for I2cAddress {
 }
 
 impl I2cAddress {
-    fn get(& self) -> u8 {
+    fn get(&self) -> u8 {
         match self {
             I2cAddress::X68 => 0x68,
             I2cAddress::X69 => 0x69,
@@ -844,6 +930,7 @@ impl Default for I2cAddress {
 
 /// Range / sensitivity of accelerometer in Gs
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AccRange {
     Gs2 = 0b00,
     Gs4 = 0b01,
@@ -864,6 +951,7 @@ impl AccRange {
 
 /// Range / sentivity of gyroscope in degrees/second
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum GyrRange {
     Dps250 = 0b00,
     Dps500 = 0b01,
@@ -884,6 +972,7 @@ impl GyrRange {
 
 /// Unit of accelerometer readings
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AccUnit {
     /// Meters per second squared (m/s^2)
     Mpss,
@@ -902,6 +991,7 @@ impl AccUnit {
 
 /// Unit of gyroscope readings
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum GyrUnit {
     /// Radians per second
     Rps,
@@ -920,6 +1010,7 @@ impl GyrUnit {
 
 /// Digital low-pass filter for of accelerometer readings
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AccDlp {
     Hz473 = 7,
     Hz246 = 1,
@@ -933,6 +1024,7 @@ pub enum AccDlp {
 
 /// Digital low-pass filter for of gyroscope readings
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum GyrDlp {
     Hz361 = 7,
     Hz196 = 0,
