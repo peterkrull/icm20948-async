@@ -1,6 +1,6 @@
 [package]
 name = "icm20948-async"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 description = "Async driver for the ICM20948 (Imu+Mag) for no_std environments"
 authors = ["Peter Krull"]
@@ -21,6 +21,6 @@ nalgebra = { version = ">0.30.0", default-features = false, features = [
     "libm",
 ] }
 
-serde = { version = "1.0.*", default-features = false, features = [
+serde = { version = ">1.0.0", default-features = false, features = [
     "derive",
 ], optional = true }

@@ -64,8 +64,6 @@ pub trait BusTransfer<E>
 where
     E: Into<IcmError<E>>,
 {
-    type Inner;
-    fn destroy(self) -> Self::Inner;
     async fn bus_transfer(&mut self, write: &[u8], read: &mut [u8]) -> Result<(), E>;
     async fn bus_write(&mut self, write: &[u8]) -> Result<(), E>;
 }
@@ -76,12 +74,6 @@ where
     I2C: I2c<Error = E>,
     E: Into<IcmError<E>>,
 {
-    type Inner = I2C;
-
-    fn destroy(self) -> Self::Inner {
-        self.bus_inner
-    }
-
     async fn bus_transfer(&mut self, write: &[u8], read: &mut [u8]) -> Result<(), E> {
         self.bus_inner
             .write_read(self.address.get(), write, read)
@@ -99,12 +91,6 @@ where
     SPI: SpiDevice<Error = E>,
     E: Into<IcmError<E>>,
 {
-    type Inner = SPI;
-
-    fn destroy(self) -> Self::Inner {
-        self.bus_inner
-    }
-
     async fn bus_transfer(&mut self, write: &[u8], read: &mut [u8]) -> Result<(), E> {
         self.bus_inner.transfer(read, write).await
     }
@@ -195,14 +181,6 @@ where
     }
 }
 
-impl<BUS: BusTransfer<E>, MAG, INIT, DELAY, E> Icm20948<BUS, MAG, INIT, DELAY, E> {
-    /// Consumes the `Icm20948` and releases the bus back to the user
-    #[must_use]
-    pub fn destroy(self) -> BUS::Inner {
-        self.bus.destroy()
-    }
-}
-
 impl<BUS, DELAY, E> Icm20948<IcmBusI2c<BUS>, MagDisabled, NotInit, DELAY, E>
 where
     BUS: I2c<Error = E>,
@@ -229,7 +207,6 @@ impl<BUS, DELAY, E> Icm20948<BUS, MagDisabled, NotInit, DELAY, E>
 where
     BUS: BusTransfer<E>,
     DELAY: DelayNs,
-    BUS: BusTransfer<E>,
 {
     /*
         Configuration methods
@@ -338,42 +315,36 @@ where
     /// Initializes the IMU with accelerometer and gyroscope
     pub async fn initialize_6dof(
         mut self,
-    ) -> Result<Icm20948<BUS, MagDisabled, Init, DELAY, E>, (IcmError<E>, BUS::Inner)> {
-        match self.setup_acc_gyr().await {
-            Ok(_) => Ok(Icm20948 {
-                mag_state: MagDisabled,
-                init_state: PhantomData::<Init>,
-                bus: self.bus,
-                config: self.config,
-                user_bank: self.user_bank,
-                delay: self.delay,
-                bus_error: PhantomData,
-            }),
-            Err(e) => Err((e, self.destroy())),
-        }
+    ) -> Result<Icm20948<BUS, MagDisabled, Init, DELAY, E>, IcmError<E>> {
+        self.setup_acc_gyr().await?;
+
+        Ok(Icm20948 {
+            mag_state: MagDisabled,
+            init_state: PhantomData::<Init>,
+            bus: self.bus,
+            config: self.config,
+            user_bank: self.user_bank,
+            delay: self.delay,
+            bus_error: PhantomData,
+        })
     }
 
     /// Initializes the IMU with accelerometer, gyroscope and magnetometer
     pub async fn initialize_9dof(
         mut self,
-    ) -> Result<Icm20948<BUS, MagEnabled, Init, DELAY, E>, (IcmError<E>, BUS::Inner)> {
-        let setup = async {
-            self.setup_acc_gyr().await?;
-            self.setup_mag().await
-        };
+    ) -> Result<Icm20948<BUS, MagEnabled, Init, DELAY, E>, IcmError<E>> {
+        self.setup_acc_gyr().await?;
+        self.setup_mag().await?;
 
-        match setup.await {
-            Ok(_) => Ok(Icm20948 {
-                mag_state: MagEnabled::uncralibrated(),
-                init_state: PhantomData::<Init>,
-                bus: self.bus,
-                config: self.config,
-                user_bank: self.user_bank,
-                delay: self.delay,
-                bus_error: self.bus_error,
-            }),
-            Err(e) => Err((e, self.destroy())),
-        }
+        Ok(Icm20948 {
+            mag_state: MagEnabled::uncralibrated(),
+            init_state: PhantomData::<Init>,
+            bus: self.bus,
+            config: self.config,
+            user_bank: self.user_bank,
+            delay: self.delay,
+            bus_error: self.bus_error,
+        })
     }
 
     /// Setup accelerometer and gyroscope according to config
@@ -439,7 +410,7 @@ where
             .await?;
 
         // Set expected read size
-        self.write_to(Bank3::I2cSlv0Ctrl, 1 << 7 | 8).await?;
+        self.write_to(Bank3::I2cSlv0Ctrl, (1 << 7) | 8).await?;
 
         Ok(())
     }
@@ -528,7 +499,7 @@ where
         self.delay.delay_ms(10).await;
         self.write_to(Bank3::I2cSlv0Reg, reg).await?;
         self.write_to(Bank3::I2cSlv0Do, data).await?;
-        self.write_to(Bank3::I2cSlv0Ctrl, 1 << 7 | 1).await?;
+        self.write_to(Bank3::I2cSlv0Ctrl, (1 << 7) | 1).await?;
         self.delay.delay_ms(10).await;
         self.set_mag_read().await
     }
@@ -538,7 +509,8 @@ where
         self.set_mag_read().await?;
         self.delay.delay_ms(10).await;
         self.write_to(Bank3::I2cSlv0Reg, reg.reg()).await?;
-        self.write_to(Bank3::I2cSlv0Ctrl, 1 << 7 | N as u8).await?;
+        self.write_to(Bank3::I2cSlv0Ctrl, (1 << 7) | N as u8)
+            .await?;
         self.delay.delay_ms(10).await;
         self.read_from(Bank0::ExtSlvSensData00).await
     }
@@ -585,7 +557,7 @@ where
             self.write_to_flag(Bank2::AccelConfig, 0u8, 0b0011_1001)
                 .await
         } else {
-            self.write_to_flag(Bank2::AccelConfig, (acc_dlp as u8) << 3 | 1, 0b0011_1001)
+            self.write_to_flag(Bank2::AccelConfig, ((acc_dlp as u8) << 3) | 1, 0b0011_1001)
                 .await
         }
     }
@@ -596,7 +568,7 @@ where
             self.write_to_flag(Bank2::GyroConfig1, 0u8, 0b0011_1001)
                 .await
         } else {
-            self.write_to_flag(Bank2::GyroConfig1, (gyr_dlp as u8) << 3 | 1, 0b0011_1001)
+            self.write_to_flag(Bank2::GyroConfig1, ((gyr_dlp as u8) << 3) | 1, 0b0011_1001)
                 .await
         }
     }
@@ -829,18 +801,18 @@ where
     }
 
     /// Returns the scalar corresponding to the unit and range configured
-    fn acc_scalar(&self) -> f32 {
+    const fn acc_scalar(&self) -> f32 {
         self.config.acc_unit.scalar() / self.config.acc_range.divisor()
     }
 
     /// Returns the scalar corresponding to the unit and range configured
-    fn gyr_scalar(&self) -> f32 {
+    const fn gyr_scalar(&self) -> f32 {
         self.config.gyr_unit.scalar() / self.config.gyr_range.divisor()
     }
 }
 
 /// Collects 6 bytes into a vector of i16 values (acc/gyr only)
-fn collect_3xi16(values: [u8; 6]) -> [i16; 3] {
+const fn collect_3xi16(values: [u8; 6]) -> [i16; 3] {
     let [xh, xl, yh, yl, zh, zl] = values;
     [
         i16::from_be_bytes([xh, xl]),
@@ -850,7 +822,7 @@ fn collect_3xi16(values: [u8; 6]) -> [i16; 3] {
 }
 
 /// Collects 6 bytes into a vector of i16 values (mag only)
-fn collect_3xi16_mag(values: [u8; 6]) -> [i16; 3] {
+const fn collect_3xi16_mag(values: [u8; 6]) -> [i16; 3] {
     let [xl, xh, yl, yh, zl, zh] = values;
     #[cfg(feature = "align-mag")]
     let mag = [
@@ -896,11 +868,12 @@ impl Default for Icm20948Config {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub enum I2cAddress {
     /// On some modules `0x68` is the default address if pin `AD0` is low
     X68,
     /// On some modules `0x69` is the default address if pin `AD0` is high
+    #[default]
     X69,
     /// In case the ICM modules has a different address
     Any(u8),
@@ -913,18 +886,12 @@ impl From<u8> for I2cAddress {
 }
 
 impl I2cAddress {
-    fn get(&self) -> u8 {
+    const fn get(&self) -> u8 {
         match self {
             I2cAddress::X68 => 0x68,
             I2cAddress::X69 => 0x69,
             I2cAddress::Any(a) => *a,
         }
-    }
-}
-
-impl Default for I2cAddress {
-    fn default() -> Self {
-        I2cAddress::X69
     }
 }
 
@@ -939,7 +906,7 @@ pub enum AccRange {
 }
 
 impl AccRange {
-    pub fn divisor(self) -> f32 {
+    pub const fn divisor(self) -> f32 {
         match self {
             Self::Gs2 => 16384.0,
             Self::Gs4 => 8192.0,
@@ -960,7 +927,7 @@ pub enum GyrRange {
 }
 
 impl GyrRange {
-    pub fn divisor(self) -> f32 {
+    pub const fn divisor(self) -> f32 {
         match self {
             Self::Dps250 => 131.0,
             Self::Dps500 => 65.5,
@@ -981,7 +948,7 @@ pub enum AccUnit {
 }
 
 impl AccUnit {
-    pub fn scalar(self) -> f32 {
+    pub const fn scalar(self) -> f32 {
         match self {
             Self::Mpss => 9.82,
             Self::Gs => 1.0,
@@ -1000,10 +967,10 @@ pub enum GyrUnit {
 }
 
 impl GyrUnit {
-    pub fn scalar(self) -> f32 {
+    pub const fn scalar(self) -> f32 {
         match self {
-            Self::Rps => 0.017453293,
-            Self::Dps => 1.0,
+            Self::Rps => 1.0f32.to_radians(),
+            Self::Dps => 1.0f32,
         }
     }
 }
