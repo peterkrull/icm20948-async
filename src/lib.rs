@@ -64,7 +64,8 @@ impl<I2C: I2c> BusTransfer for BusI2c<I2C> {
     }
 
     async fn bus_write(&mut self, write: &[u8]) -> Result<(), Self::Error> {
-        self.bus_inner.write(self.address.get(), write).await
+        let addr = self.address.get();
+        self.bus_inner.write(addr, write).await
     }
 }
 
@@ -84,7 +85,6 @@ pub struct IcmBuilder<BUS, DELAY> {
     bus: BUS,
     delay: DELAY,
     config: Config,
-    user_bank: UserBank,
 }
 
 pub struct Icm20948<BUS, MAG> {
@@ -109,7 +109,6 @@ where
             },
             delay,
             config: Config::default(),
-            user_bank: UserBank::Bank0,
         }
     }
 }
@@ -126,7 +125,6 @@ where
             bus: BusSpi { bus_inner: bus },
             delay,
             config: Config::default(),
-            user_bank: UserBank::Bank0,
         }
     }
 }
@@ -265,7 +263,7 @@ where
         let mut imu = Icm20948 {
             bus: self.bus,
             config: self.config,
-            user_bank: self.user_bank,
+            user_bank: UserBank::Bank0,
             mag_state: PhantomData,
         };
 
@@ -281,7 +279,7 @@ where
         let mut imu = Icm20948 {
             bus: self.bus,
             config: self.config,
-            user_bank: self.user_bank,
+            user_bank: UserBank::Bank0,
             mag_state: PhantomData,
         };
 
