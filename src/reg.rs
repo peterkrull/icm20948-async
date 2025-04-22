@@ -1,15 +1,6 @@
 /// Register bank select register
 pub const REG_BANK_SEL: u8 = 0x7F;
 
-#[repr(u8)]
-#[derive(PartialEq, Copy, Clone)]
-pub enum UserBank {
-    Bank0 = 0b00,
-    Bank1 = 0b01,
-    Bank2 = 0b10,
-    Bank3 = 0b11,
-}
-
 #[allow(unused)]
 #[derive(PartialEq, Copy, Clone)]
 pub enum Bank0 {
@@ -69,9 +60,9 @@ pub enum Bank2 {
     GyroSmplrtDiv = 0x00,
     GyroConfig1 = 0x01,
     GyroConfig2 = 0x02,
-    XgOffsUsrh = 0x03,
-    YgOffsUsrh = 0x05,
-    ZgOffsUsrh = 0x07,
+    XgOffsH = 0x03,
+    YgOffsH = 0x05,
+    ZgOffsH = 0x07,
     OdrAlignEn = 0x09,
     AccelSmplrtDiv1 = 0x10,
     AccelSmplrtDiv2 = 0x11,
@@ -96,50 +87,39 @@ pub enum Bank3 {
     I2cSlv0Do = 0x06,
 }
 
-pub trait Register {
-    fn bank(self) -> UserBank;
+#[repr(u8)]
+#[derive(PartialEq, Copy, Clone)]
+pub enum UserBank {
+    Bank0 = 0b00,
+    Bank1 = 0b01,
+    Bank2 = 0b10,
+    Bank3 = 0b11,
+}
+
+pub trait Register: Copy {
+    fn bank() -> UserBank;
     fn reg(self) -> u8;
 }
 
-impl Register for Bank0 {
-    fn bank(self) -> UserBank {
-        UserBank::Bank0
-    }
+macro_rules! impl_register {
+    ($bank:ident, $user_bank:expr) => {
+        impl Register for $bank {
+            fn bank() -> UserBank {
+                $user_bank
+            }
 
-    fn reg(self) -> u8 {
-        self as u8
-    }
+            fn reg(self) -> u8 {
+                self as u8
+            }
+        }
+    };
 }
 
-impl Register for Bank1 {
-    fn bank(self) -> UserBank {
-        UserBank::Bank1
-    }
-
-    fn reg(self) -> u8 {
-        self as u8
-    }
-}
-
-impl Register for Bank2 {
-    fn bank(self) -> UserBank {
-        UserBank::Bank2
-    }
-
-    fn reg(self) -> u8 {
-        self as u8
-    }
-}
-
-impl Register for Bank3 {
-    fn bank(self) -> UserBank {
-        UserBank::Bank3
-    }
-
-    fn reg(self) -> u8 {
-        self as u8
-    }
-}
+// Use the macro to implement the Register trait for each bank
+impl_register!(Bank0, UserBank::Bank0);
+impl_register!(Bank1, UserBank::Bank1);
+impl_register!(Bank2, UserBank::Bank2);
+impl_register!(Bank3, UserBank::Bank3);
 
 #[allow(unused)]
 #[derive(Copy, Clone)]
