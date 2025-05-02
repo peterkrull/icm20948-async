@@ -2,7 +2,7 @@
 
 This driver crate for the ICM20948 uses the `embedded-hal-async` traits to achieve completely non-blocking access to the ICM20948. The crate uses generics to automatically expose the relevant methods, when various hardware features are configured, for example when the magnetometer is enabled.
 
-The current feature set is basic, but allows for reading the main sensors and writing the most important values. Below is the feature list, with supported features checked off. The rest are on the to-do list. 
+The current feature set is basic, but allows for reading the main sensors and writing the most important values. Below is the feature list, with supported features checked off. The rest are on the to-do list.
 
 - [x] Reading from accelerometer
 - [x] Reading from gyroscope
@@ -20,34 +20,27 @@ The current feature set is basic, but allows for reading the main sensors and wr
 - [ ] Power management
 - [ ] Run self-tests
 - [ ] Interrupts
-- [x] Release I2C/SPI object when not used
 - [x] Use embedded-hal traits for delays
 
 ## Example use
 
 ```rust
-use icm20948_async::{Icm20948, GyrUnit, GyrDlp, AccRange};
+use icm20948_async::{IcmBuilder, GyrUnit, GyrDlp, AccRange};
 
-let imu_result = Icm20948::new_i2c(i2c, delay)
+let mut imu = IcmBuilder::new_i2c(i2c, delay)
         .gyr_unit(GyrUnit::Rps)   // Set gyroscope to output rad/s
         .gyr_dlp(GyrDlp::Hz196)   // Set gyroscope low-pass filter
         .acc_range(AccRange::Gs8) // Set accelerometer measurement range
         .set_address(0x69)        // Set address (0x68 or 0x69)
-        .initialize_9dof().await; // Initialize with magnetometer
-// where
-//     i2c: impl embedded_hal_async::i2c::I2c
-//     delay: impl embedded_hal_async::delay::DelayNs
-
-let Ok(mut imu) = imu_result else { panic!("Failed to initialize IMU") };
+        .initialize_9dof()        // Initialize with magnetometer
+        .await?; 
 
 loop {
-    // Read data from IMU, loop back in case of failure
-    let Ok(measurement) = imu.read_9dof().await else { continue };
+    let measurement = imu.read_9dof().await?;
 
     // We now have:
-    // measurement.acc: nalgebra::Vector3<f32>
-    // measurement.gyr: nalgebra::Vector3<f32>
-    // measurement.mag: nalgebra::Vector3<f32>
+    // measurement.acc: [f32; 3]
+    // measurement.gyr: [f32; 3]
+    // measurement.mag: [f32; 3]
 }
-
 ```

@@ -161,19 +161,3 @@ pub enum GyrDlp {
     Hz6 = 6,
     Disabled = 8,
 }
-
-#[derive(Debug)]
-pub enum SetupError<E> {
-    /// An error occured with the I2C/SPI connection during setup
-    Bus(E),
-    /// An incorrect 'Who Am I' value was returned from the imu, expected 0xEA (233)
-    ImuWhoAmI(u8),
-    /// An incorrect 'Who Am I' value was returned from the mag, expected 0x09 (9)
-    MagWhoAmI(u8),
-}
-
-impl<E> From<E> for SetupError<E> {
-    fn from(error: E) -> Self {
-        SetupError::Bus(error)
-    }
-}

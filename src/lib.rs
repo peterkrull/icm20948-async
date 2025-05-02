@@ -13,7 +13,24 @@ const MAGNET_ADDR: u8 = 0x0C;
 const IMU_WHOAMI: u8 = 0xEA;
 const MAG_WHOAMI: u8 = 0x09;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum SetupError<E> {
+    /// An error occured with the I2C/SPI connection during setup
+    Bus(E),
+    /// An incorrect 'Who Am I' value was returned from the imu, expected 0xEA (233)
+    ImuWhoAmI(u8),
+    /// An incorrect 'Who Am I' value was returned from the mag, expected 0x09 (9)
+    MagWhoAmI(u8),
+}
+
+impl<E> From<E> for SetupError<E> {
+    fn from(error: E) -> Self {
+        SetupError::Bus(error)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// Container for accelerometer and gyroscope measurements
 pub struct Data6Dof<T> {
     pub acc: [T; 3],
@@ -21,7 +38,8 @@ pub struct Data6Dof<T> {
     pub tmp: T,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// Container for accelerometer, gyroscope and magnetometer measurements
 pub struct Data9Dof<T> {
     pub acc: [T; 3],
@@ -81,12 +99,24 @@ impl<SPI: SpiDevice> BusTransfer for BusSpi<SPI> {
     }
 }
 
+/// Configure and initialize a new instance of [`Icm20948`]. Use either of the
+/// [`Icm20948::new_i2c`] or [`Icm20948::new_spi`] methods to begin.
+///
+/// # Example
+///
+/// ```rust
+/// let mut imu = IcmBuilder::new_i2c(i2c, delay)
+///     .gyr_unit(GyrUnit::Rps)
+///     .gyr_dlp(GyrDlp::Hz196)
+///     .initialize_9dof().await?;
+/// ```
 pub struct IcmBuilder<BUS, DELAY> {
     bus: BUS,
     delay: DELAY,
     config: Config,
 }
 
+/// An initialized IMU. Use the [`IcmBuilder`] to construct a new instance.
 pub struct Icm20948<BUS, MAG> {
     bus: BUS,
     config: Config,
@@ -361,30 +391,30 @@ where
     /// Read a const number `N` of bytes from the requested register
     async fn read_from<const N: usize, R: Register>(
         &mut self,
-        cmd: R,
+        reg: R,
     ) -> Result<[u8; N], BUS::Error> {
         let mut buf = [0u8; N];
         self.set_user_bank::<R>(false).await?;
-        self.bus.bus_transfer(&[cmd.reg()], &mut buf).await?;
+        self.bus.bus_transfer(&[reg.addr()], &mut buf).await?;
         Ok(buf)
     }
 
     /// Write a single byte to the requeste register
-    async fn write_to<R: Register>(&mut self, cmd: R, data: u8) -> Result<(), BUS::Error> {
+    async fn write_to<R: Register>(&mut self, reg: R, data: u8) -> Result<(), BUS::Error> {
         self.set_user_bank::<R>(false).await?;
-        self.bus.bus_write(&[cmd.reg(), data]).await
+        self.bus.bus_write(&[reg.addr(), data]).await
     }
 
     /// Write to a register, but only overwrite the parts corresponding to the flag byte
     async fn write_to_flag<R: Register>(
         &mut self,
-        cmd: R,
+        reg: R,
         data: u8,
         flag: u8,
     ) -> Result<(), BUS::Error> {
-        let [mut register] = self.read_from(cmd).await?;
+        let [mut register] = self.read_from(reg).await?;
         register = (register & !flag) | (data & flag);
-        self.write_to(cmd, register).await
+        self.write_to(reg, register).await
     }
 
     /// Put the magnetometer into read mode
@@ -462,12 +492,12 @@ where
     /// Set (or disable) accelerometer digital low-pass filter
     pub async fn set_acc_dlp(&mut self, acc_dlp: AccDlp) -> Result<(), BUS::Error> {
         let flag = 0b0011_1001;
-        if AccDlp::Disabled == acc_dlp {
-            self.write_to_flag(Bank2::AccelConfig, 0u8, flag).await
+        let data = if AccDlp::Disabled != acc_dlp {
+            ((acc_dlp as u8) << 3) | 1
         } else {
-            let data = ((acc_dlp as u8) << 3) | 1;
-            self.write_to_flag(Bank2::AccelConfig, data, flag).await
-        }
+            0u8
+        };
+        self.write_to_flag(Bank2::AccelConfig, data, flag).await
     }
 
     /// Set (or disable) gyroscope digital low-pass filter
@@ -678,9 +708,9 @@ where
 
         self.set_user_bank::<Bank2>(false).await?;
 
-        self.bus.bus_write(&[Bank2::XgOffsH.reg(), xh, xl]).await?;
-        self.bus.bus_write(&[Bank2::YgOffsH.reg(), yh, yl]).await?;
-        self.bus.bus_write(&[Bank2::ZgOffsH.reg(), zh, zl]).await?;
+        self.bus.bus_write(&[Bank2::XgOffsH.addr(), xh, xl]).await?;
+        self.bus.bus_write(&[Bank2::YgOffsH.addr(), yh, yl]).await?;
+        self.bus.bus_write(&[Bank2::ZgOffsH.addr(), zh, zl]).await?;
 
         Ok(())
     }
@@ -691,9 +721,9 @@ where
 
         self.set_user_bank::<Bank1>(false).await?;
 
-        self.bus.bus_write(&[Bank1::XaOffsH.reg(), xh, xl]).await?;
-        self.bus.bus_write(&[Bank1::YaOffsH.reg(), yh, yl]).await?;
-        self.bus.bus_write(&[Bank1::ZaOffsH.reg(), zh, zl]).await?;
+        self.bus.bus_write(&[Bank1::XaOffsH.addr(), xh, xl]).await?;
+        self.bus.bus_write(&[Bank1::YaOffsH.addr(), yh, yl]).await?;
+        self.bus.bus_write(&[Bank1::ZaOffsH.addr(), zh, zl]).await?;
 
         Ok(())
     }

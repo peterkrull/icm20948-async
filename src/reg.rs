@@ -98,7 +98,7 @@ pub enum UserBank {
 
 pub trait Register: Copy {
     fn bank() -> UserBank;
-    fn reg(self) -> u8;
+    fn addr(self) -> u8;
 }
 
 macro_rules! impl_register {
@@ -108,7 +108,7 @@ macro_rules! impl_register {
                 $user_bank
             }
 
-            fn reg(self) -> u8 {
+            fn addr(self) -> u8 {
                 self as u8
             }
         }
