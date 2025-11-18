@@ -4,7 +4,7 @@ use core::{future::Future, marker::PhantomData};
 use embedded_hal_async::{
     delay::DelayNs,
     i2c::{self, I2c},
-    spi::{self, SpiDevice},
+    spi::{self},
 };
 
 mod reg;
@@ -110,23 +110,29 @@ mod spi_helpers {
     }
 }
 
+pub struct SpiDevice<SPI: spi::SpiDevice> {
+    inner: SPI,
+}
+
 // Implementation of register device trait for Spi
-impl<SPI: SpiDevice> RegisterDevice for SPI {
+impl<SPI: spi::SpiDevice> RegisterDevice for SpiDevice<SPI> {
     type Error = SPI::Error;
     async fn read_registers(&mut self, reg_addr: u8, read: &mut [u8]) -> Result<(), Self::Error> {
-        self.transaction(&mut [
-            spi::Operation::Write(&spi_helpers::read_addr(reg_addr)),
-            spi::Operation::Read(read),
-        ])
-        .await
+        self.inner
+            .transaction(&mut [
+                spi::Operation::Write(&spi_helpers::read_addr(reg_addr)),
+                spi::Operation::Read(read),
+            ])
+            .await
     }
 
     async fn write_registers(&mut self, reg_addr: u8, write: &[u8]) -> Result<(), Self::Error> {
-        self.transaction(&mut [
-            spi::Operation::Write(&spi_helpers::write_addr(reg_addr)),
-            spi::Operation::Write(write),
-        ])
-        .await
+        self.inner
+            .transaction(&mut [
+                spi::Operation::Write(&spi_helpers::write_addr(reg_addr)),
+                spi::Operation::Write(write),
+            ])
+            .await
     }
 }
 
@@ -188,16 +194,16 @@ where
     }
 }
 
-impl<DEVICE, DELAY> IcmBuilder<DEVICE, DELAY>
+impl<DEVICE, DELAY> IcmBuilder<SpiDevice<DEVICE>, DELAY>
 where
-    DEVICE: SpiDevice,
+    DEVICE: spi::SpiDevice,
     DELAY: DelayNs,
 {
     /// Creates an uninitialized IMU struct with a default config.
     #[must_use]
-    pub fn new_spi(device: DEVICE, delay: DELAY) -> IcmBuilder<DEVICE, DELAY> {
+    pub fn new_spi(device: DEVICE, delay: DELAY) -> IcmBuilder<SpiDevice<DEVICE>, DELAY> {
         Self {
-            device,
+            device: SpiDevice { inner: device },
             delay,
             config: Config::default(),
         }
