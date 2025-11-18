@@ -20,7 +20,7 @@ const MAG_WHOAMI: u8 = 0x09;
 #[derive(Debug, Clone, PartialEq)]
 pub enum SetupError<E> {
     /// An error occured with the I2C/SPI connection during setup
-    Bus(E),
+    Transport(E),
     /// An incorrect 'Who Am I' value was returned from the imu, expected 0xEA (233)
     ImuWhoAmI(u8),
     /// An incorrect 'Who Am I' value was returned from the mag, expected 0x09 (9)
@@ -29,7 +29,7 @@ pub enum SetupError<E> {
 
 impl<E> From<E> for SetupError<E> {
     fn from(error: E) -> Self {
-        SetupError::Bus(error)
+        SetupError::Transport(error)
     }
 }
 
@@ -63,7 +63,7 @@ pub struct I2cDevice<I2C> {
 }
 
 // Trait to allow for generic behavior across I2c or Spi usage
-pub trait RegisterDevice {
+pub trait Icm20948Transport {
     type Error: Into<SetupError<Self::Error>>;
     fn read_registers(
         &mut self,
@@ -77,8 +77,8 @@ pub trait RegisterDevice {
     ) -> impl Future<Output = Result<(), Self::Error>>;
 }
 
-// Implementation of register device trait for I2c
-impl<I2C: I2c> RegisterDevice for I2cDevice<I2C> {
+// Implementation of transport trait for I2c
+impl<I2C: I2c> Icm20948Transport for I2cDevice<I2C> {
     type Error = I2C::Error;
     async fn read_registers(&mut self, reg_addr: u8, read: &mut [u8]) -> Result<(), Self::Error> {
         let addr = self.address.get();
@@ -110,12 +110,12 @@ mod spi_helpers {
     }
 }
 
-pub struct SpiDevice<SPI: spi::SpiDevice> {
+pub struct SpiDevice<SPI> {
     inner: SPI,
 }
 
-// Implementation of register device trait for Spi
-impl<SPI: spi::SpiDevice> RegisterDevice for SpiDevice<SPI> {
+// Implementation of transport trait for Spi
+impl<SPI: spi::SpiDevice> Icm20948Transport for SpiDevice<SPI> {
     type Error = SPI::Error;
     async fn read_registers(&mut self, reg_addr: u8, read: &mut [u8]) -> Result<(), Self::Error> {
         self.inner
@@ -147,15 +147,15 @@ impl<SPI: spi::SpiDevice> RegisterDevice for SpiDevice<SPI> {
 ///     .gyr_dlp(GyrDlp::Hz196)
 ///     .initialize_9dof().await?;
 /// ```
-pub struct IcmBuilder<DEVICE, DELAY> {
-    device: DEVICE,
+pub struct IcmBuilder<TRANSPORT, DELAY> {
+    transport: TRANSPORT,
     delay: DELAY,
     config: Config,
 }
 
 /// An initialized IMU. Use the [`IcmBuilder`] to construct a new instance.
-pub struct Icm20948<DEVICE, MAG> {
-    device: DEVICE,
+pub struct Icm20948<TRANSPORT, MAG> {
+    transport: TRANSPORT,
     config: Config,
     user_bank: UserBank,
     mag_state: PhantomData<MAG>,
@@ -170,7 +170,7 @@ where
     #[must_use]
     pub fn new_i2c(bus: BUS, delay: DELAY) -> IcmBuilder<I2cDevice<BUS>, DELAY> {
         Self {
-            device: I2cDevice {
+            transport: I2cDevice {
                 bus_inner: bus,
                 address: I2cAddress::default(),
             },
@@ -185,45 +185,45 @@ where
     #[must_use]
     pub fn set_address(self, address: impl Into<I2cAddress>) -> IcmBuilder<I2cDevice<BUS>, DELAY> {
         IcmBuilder {
-            device: I2cDevice {
+            transport: I2cDevice {
                 address: address.into(),
-                ..self.device
+                ..self.transport
             },
             ..self
         }
     }
 }
 
-impl<DEVICE, DELAY> IcmBuilder<SpiDevice<DEVICE>, DELAY>
+impl<SPI, DELAY> IcmBuilder<SpiDevice<SPI>, DELAY>
 where
-    DEVICE: spi::SpiDevice,
+    SPI: spi::SpiDevice,
     DELAY: DelayNs,
 {
     /// Creates an uninitialized IMU struct with a default config.
     #[must_use]
-    pub fn new_spi(device: DEVICE, delay: DELAY) -> IcmBuilder<SpiDevice<DEVICE>, DELAY> {
+    pub fn new_spi(spi: SPI, delay: DELAY) -> IcmBuilder<SpiDevice<SPI>, DELAY> {
         Self {
-            device: SpiDevice { inner: device },
+            transport: SpiDevice { inner: spi },
             delay,
             config: Config::default(),
         }
     }
 }
 
-impl<DEVICE, DELAY> IcmBuilder<DEVICE, DELAY>
+impl<TRANPORT, DELAY> IcmBuilder<TRANPORT, DELAY>
 where
-    DEVICE: RegisterDevice,
+    TRANPORT: Icm20948Transport,
     DELAY: DelayNs,
 {
     /// Set the whole IMU config at once
     #[must_use]
-    pub fn with_config(self, config: Config) -> IcmBuilder<DEVICE, DELAY> {
+    pub fn with_config(self, config: Config) -> IcmBuilder<TRANPORT, DELAY> {
         IcmBuilder { config, ..self }
     }
 
     /// Set accelerometer measuring range, choises are 2G, 4G, 8G or 16G
     #[must_use]
-    pub fn acc_range(self, acc_range: AccRange) -> IcmBuilder<DEVICE, DELAY> {
+    pub fn acc_range(self, acc_range: AccRange) -> IcmBuilder<TRANPORT, DELAY> {
         IcmBuilder {
             config: Config {
                 acc_range,
@@ -235,7 +235,7 @@ where
 
     /// Set accelerometer digital lowpass filter frequency
     #[must_use]
-    pub fn acc_dlp(self, acc_dlp: AccDlp) -> IcmBuilder<DEVICE, DELAY> {
+    pub fn acc_dlp(self, acc_dlp: AccDlp) -> IcmBuilder<TRANPORT, DELAY> {
         IcmBuilder {
             config: Config {
                 acc_dlp,
@@ -247,7 +247,7 @@ where
 
     /// Set returned unit of accelerometer measurement, choises are Gs or m/s^2
     #[must_use]
-    pub fn acc_unit(self, acc_unit: AccUnit) -> IcmBuilder<DEVICE, DELAY> {
+    pub fn acc_unit(self, acc_unit: AccUnit) -> IcmBuilder<TRANPORT, DELAY> {
         IcmBuilder {
             config: Config {
                 acc_unit,
@@ -259,7 +259,7 @@ where
 
     /// Set accelerometer output data rate
     #[must_use]
-    pub fn acc_odr(self, acc_odr: u16) -> IcmBuilder<DEVICE, DELAY> {
+    pub fn acc_odr(self, acc_odr: u16) -> IcmBuilder<TRANPORT, DELAY> {
         IcmBuilder {
             config: Config {
                 acc_odr,
@@ -271,7 +271,7 @@ where
 
     /// Set gyroscope measuring range, choises are 250Dps, 500Dps, 1000Dps and 2000Dps
     #[must_use]
-    pub fn gyr_range(self, gyr_range: GyrRange) -> IcmBuilder<DEVICE, DELAY> {
+    pub fn gyr_range(self, gyr_range: GyrRange) -> IcmBuilder<TRANPORT, DELAY> {
         IcmBuilder {
             config: Config {
                 gyr_range,
@@ -283,7 +283,7 @@ where
 
     /// Set gyroscope digital low pass filter frequency
     #[must_use]
-    pub fn gyr_dlp(self, gyr_dlp: GyrDlp) -> IcmBuilder<DEVICE, DELAY> {
+    pub fn gyr_dlp(self, gyr_dlp: GyrDlp) -> IcmBuilder<TRANPORT, DELAY> {
         IcmBuilder {
             config: Config {
                 gyr_dlp,
@@ -295,7 +295,7 @@ where
 
     /// Set returned unit of gyroscope measurement, choises are degrees/s or radians/s
     #[must_use]
-    pub fn gyr_unit(self, gyr_unit: GyrUnit) -> IcmBuilder<DEVICE, DELAY> {
+    pub fn gyr_unit(self, gyr_unit: GyrUnit) -> IcmBuilder<TRANPORT, DELAY> {
         IcmBuilder {
             config: Config {
                 gyr_unit,
@@ -307,7 +307,7 @@ where
 
     /// Set gyroscope output data rate
     #[must_use]
-    pub fn gyr_odr(self, gyr_odr: u8) -> IcmBuilder<DEVICE, DELAY> {
+    pub fn gyr_odr(self, gyr_odr: u8) -> IcmBuilder<TRANPORT, DELAY> {
         IcmBuilder {
             config: Config {
                 gyr_odr,
@@ -320,9 +320,9 @@ where
     /// Initializes the IMU with accelerometer and gyroscope
     pub async fn initialize_6dof(
         mut self,
-    ) -> Result<Icm20948<DEVICE, MagDisabled>, SetupError<DEVICE::Error>> {
+    ) -> Result<Icm20948<TRANPORT, MagDisabled>, SetupError<TRANPORT::Error>> {
         let mut imu = Icm20948 {
-            device: self.device,
+            transport: self.transport,
             config: self.config,
             user_bank: UserBank::Bank0,
             mag_state: PhantomData,
@@ -336,9 +336,9 @@ where
     /// Initializes the IMU with accelerometer, gyroscope and magnetometer
     pub async fn initialize_9dof(
         mut self,
-    ) -> Result<Icm20948<DEVICE, MagEnabled>, SetupError<DEVICE::Error>> {
+    ) -> Result<Icm20948<TRANPORT, MagEnabled>, SetupError<TRANPORT::Error>> {
         let mut imu = Icm20948 {
-            device: self.device,
+            transport: self.transport,
             config: self.config,
             user_bank: UserBank::Bank0,
             mag_state: PhantomData,
@@ -351,15 +351,15 @@ where
     }
 }
 
-impl<DEVICE, MAG> Icm20948<DEVICE, MAG>
+impl<TRANSPORT, MAG> Icm20948<TRANSPORT, MAG>
 where
-    DEVICE: RegisterDevice,
+    TRANSPORT: Icm20948Transport,
 {
     /// Setup accelerometer and gyroscope according to config
     async fn setup_acc_gyr(
         &mut self,
         delay: &mut impl DelayNs,
-    ) -> Result<(), SetupError<DEVICE::Error>> {
+    ) -> Result<(), SetupError<TRANSPORT::Error>> {
         // Ensure known-good state
         self.device_reset(delay).await?;
 
@@ -390,7 +390,7 @@ where
     }
 
     /// Reset accelerometer / gyroscope module
-    pub async fn device_reset(&mut self, delay: &mut impl DelayNs) -> Result<(), DEVICE::Error> {
+    pub async fn device_reset(&mut self, delay: &mut impl DelayNs) -> Result<(), TRANSPORT::Error> {
         delay.delay_ms(20).await;
         self.write_to_flag(Bank0::PwrMgmt1, 1 << 7, 1 << 7).await?;
         delay.delay_ms(50).await;
@@ -398,20 +398,20 @@ where
     }
 
     /// Enables main ICM module to act as I2C master (eg. for magnetometer)
-    async fn enable_i2c_master(&mut self, enable: bool) -> Result<(), DEVICE::Error> {
+    async fn enable_i2c_master(&mut self, enable: bool) -> Result<(), TRANSPORT::Error> {
         self.write_to_flag(Bank0::UserCtrl, u8::from(enable) << 5, 1 << 5)
             .await
     }
 
     /// Resets I2C master module
-    async fn reset_i2c_master(&mut self) -> Result<(), DEVICE::Error> {
+    async fn reset_i2c_master(&mut self) -> Result<(), TRANSPORT::Error> {
         self.write_to_flag(Bank0::UserCtrl, 1 << 1, 1 << 1).await
     }
 
     /// Ensure correct user bank for given register
-    async fn set_user_bank<R: Register>(&mut self, force: bool) -> Result<(), DEVICE::Error> {
+    async fn set_user_bank<R: Register>(&mut self, force: bool) -> Result<(), TRANSPORT::Error> {
         if (self.user_bank != R::bank()) || force {
-            self.device
+            self.transport
                 .write_registers(REG_BANK_SEL, &[(R::bank() as u8) << 4])
                 .await?;
             self.user_bank = R::bank();
@@ -423,17 +423,17 @@ where
     async fn read_from<const N: usize, R: Register>(
         &mut self,
         reg: R,
-    ) -> Result<[u8; N], DEVICE::Error> {
+    ) -> Result<[u8; N], TRANSPORT::Error> {
         let mut buf = [0u8; N];
         self.set_user_bank::<R>(false).await?;
-        self.device.read_registers(reg.addr(), &mut buf).await?;
+        self.transport.read_registers(reg.addr(), &mut buf).await?;
         Ok(buf)
     }
 
     /// Write a single byte to the requeste register
-    async fn write_to<R: Register>(&mut self, reg: R, data: u8) -> Result<(), DEVICE::Error> {
+    async fn write_to<R: Register>(&mut self, reg: R, data: u8) -> Result<(), TRANSPORT::Error> {
         self.set_user_bank::<R>(false).await?;
-        self.device.write_registers(reg.addr(), &[data]).await
+        self.transport.write_registers(reg.addr(), &[data]).await
     }
 
     /// Write to a register, but only overwrite the parts corresponding to the flag byte
@@ -442,14 +442,14 @@ where
         reg: R,
         data: u8,
         flag: u8,
-    ) -> Result<(), DEVICE::Error> {
+    ) -> Result<(), TRANSPORT::Error> {
         let [mut register] = self.read_from(reg).await?;
         register = (register & !flag) | (data & flag);
         self.write_to(reg, register).await
     }
 
     /// Put the magnetometer into read mode
-    async fn set_mag_read(&mut self) -> Result<(), DEVICE::Error> {
+    async fn set_mag_read(&mut self) -> Result<(), TRANSPORT::Error> {
         let [mut reg] = self.read_from(Bank3::I2cSlv0Addr).await?;
         reg &= 0b0111_1111;
         reg |= 1 << 7;
@@ -457,7 +457,7 @@ where
     }
 
     /// Put the magnetometer into write mode
-    async fn set_mag_write(&mut self) -> Result<(), DEVICE::Error> {
+    async fn set_mag_write(&mut self) -> Result<(), TRANSPORT::Error> {
         let [mut reg] = self.read_from(Bank3::I2cSlv0Addr).await?;
         reg &= 0b0111_1111;
         self.write_to(Bank3::I2cSlv0Addr, reg).await
@@ -469,7 +469,7 @@ where
         reg: MagBank,
         data: u8,
         delay: &mut impl DelayNs,
-    ) -> Result<(), DEVICE::Error> {
+    ) -> Result<(), TRANSPORT::Error> {
         self.set_mag_write().await?;
         delay.delay_ms(10).await;
         self.write_to(Bank3::I2cSlv0Reg, reg.reg()).await?;
@@ -484,7 +484,7 @@ where
         &mut self,
         reg: MagBank,
         delay: &mut impl DelayNs,
-    ) -> Result<[u8; N], DEVICE::Error> {
+    ) -> Result<[u8; N], TRANSPORT::Error> {
         self.set_mag_read().await?;
         delay.delay_ms(10).await;
         self.write_to(Bank3::I2cSlv0Reg, reg.reg()).await?;
@@ -495,7 +495,7 @@ where
     }
 
     /// Configure acceleromter to measure with given range
-    pub async fn set_acc_range(&mut self, range: AccRange) -> Result<(), DEVICE::Error> {
+    pub async fn set_acc_range(&mut self, range: AccRange) -> Result<(), TRANSPORT::Error> {
         self.write_to_flag(Bank2::AccelConfig, (range as u8) << 1, 0b0110)
             .await?;
         self.config.acc_range = range;
@@ -503,7 +503,7 @@ where
     }
 
     /// Configure gyroscope to measure with given range
-    pub async fn set_gyr_range(&mut self, range: GyrRange) -> Result<(), DEVICE::Error> {
+    pub async fn set_gyr_range(&mut self, range: GyrRange) -> Result<(), TRANSPORT::Error> {
         self.write_to_flag(Bank2::GyroConfig1, (range as u8) << 1, 0b0110)
             .await?;
         self.config.gyr_range = range;
@@ -521,7 +521,7 @@ where
     }
 
     /// Set (or disable) accelerometer digital low-pass filter
-    pub async fn set_acc_dlp(&mut self, acc_dlp: AccDlp) -> Result<(), DEVICE::Error> {
+    pub async fn set_acc_dlp(&mut self, acc_dlp: AccDlp) -> Result<(), TRANSPORT::Error> {
         let flag = 0b0011_1001;
         let data = if AccDlp::Disabled != acc_dlp {
             ((acc_dlp as u8) << 3) | 1
@@ -532,7 +532,7 @@ where
     }
 
     /// Set (or disable) gyroscope digital low-pass filter
-    pub async fn set_gyr_dlp(&mut self, gyr_dlp: GyrDlp) -> Result<(), DEVICE::Error> {
+    pub async fn set_gyr_dlp(&mut self, gyr_dlp: GyrDlp) -> Result<(), TRANSPORT::Error> {
         let flag = 0b0011_1001;
         if GyrDlp::Disabled == gyr_dlp {
             self.write_to_flag(Bank2::GyroConfig1, 0u8, flag).await
@@ -543,27 +543,27 @@ where
     }
 
     /// Set accelerometer output data rate. Value will be clamped above 4095.
-    pub async fn set_acc_odr(&mut self, acc_odr: u16) -> Result<(), DEVICE::Error> {
+    pub async fn set_acc_odr(&mut self, acc_odr: u16) -> Result<(), TRANSPORT::Error> {
         let [msb, lsb] = acc_odr.clamp(0, 0xFFF).to_be_bytes();
         self.write_to(Bank2::AccelSmplrtDiv1, msb).await?;
         self.write_to(Bank2::AccelSmplrtDiv2, lsb).await
     }
 
     /// Set gyroscope output data rate.
-    pub async fn set_gyr_odr(&mut self, gyr_odr: u8) -> Result<(), DEVICE::Error> {
+    pub async fn set_gyr_odr(&mut self, gyr_odr: u8) -> Result<(), TRANSPORT::Error> {
         self.write_to(Bank2::GyroSmplrtDiv, gyr_odr).await
     }
 }
 
-impl<DEVICE> Icm20948<DEVICE, MagEnabled>
+impl<TRANSPORT> Icm20948<TRANSPORT, MagEnabled>
 where
-    DEVICE: RegisterDevice,
+    TRANSPORT: Icm20948Transport,
 {
     /// Setup magnetometer in continuous mode
     async fn setup_mag(
         &mut self,
         delay: &mut impl DelayNs,
-    ) -> Result<(), SetupError<DEVICE::Error>> {
+    ) -> Result<(), SetupError<TRANSPORT::Error>> {
         // Ensure known-good state
         self.mag_reset(delay).await?;
 
@@ -600,7 +600,7 @@ where
     }
 
     /// Reset magnetometer module ( 120 ms non-blocking delays)
-    async fn mag_reset(&mut self, delay: &mut impl DelayNs) -> Result<(), DEVICE::Error> {
+    async fn mag_reset(&mut self, delay: &mut impl DelayNs) -> Result<(), TRANSPORT::Error> {
         // Control 3 register bit 1 resets magnetometer unit
         self.mag_write_to(MagBank::Control3, 1, delay).await?;
         delay.delay_ms(100).await;
@@ -610,7 +610,7 @@ where
     }
 
     /// Get vector of scaled magnetometer values
-    pub async fn read_mag(&mut self) -> Result<[f32; 3], DEVICE::Error> {
+    pub async fn read_mag(&mut self) -> Result<[f32; 3], TRANSPORT::Error> {
         let mag = self.read_mag_unscaled().await?;
         let mag = mag.map(|x| 0.15 * x as f32);
 
@@ -618,7 +618,7 @@ where
     }
 
     /// Get array of unscaled accelerometer values
-    pub async fn read_mag_unscaled(&mut self) -> Result<[i16; 3], DEVICE::Error> {
+    pub async fn read_mag_unscaled(&mut self) -> Result<[i16; 3], TRANSPORT::Error> {
         let raw: [u8; 6] = self.read_from(Bank0::ExtSlvSensData00).await?;
         let mag = collect_3xi16_mag(raw);
 
@@ -626,7 +626,7 @@ where
     }
 
     /// Get scaled measurement for accelerometer, gyroscope and magnetometer, and temperature
-    pub async fn read_9dof(&mut self) -> Result<Data9Dof<f32>, DEVICE::Error> {
+    pub async fn read_9dof(&mut self) -> Result<Data9Dof<f32>, TRANSPORT::Error> {
         let raw: [u8; 20] = self.read_from(Bank0::AccelXoutH).await?;
         let [axh, axl, ayh, ayl, azh, azl, gxh, gxl, gyh, gyl, gzh, gzl, tph, tpl, mxl, mxh, myl, myh, mzl, mzh] =
             raw;
@@ -641,7 +641,7 @@ where
     }
 
     /// Get unscaled measurements for accelerometer and gyroscope, and temperature
-    pub async fn read_9dof_unscaled(&mut self) -> Result<Data9Dof<i16>, DEVICE::Error> {
+    pub async fn read_9dof_unscaled(&mut self) -> Result<Data9Dof<i16>, TRANSPORT::Error> {
         let raw: [u8; 20] = self.read_from(Bank0::AccelXoutH).await?;
         let [axh, axl, ayh, ayl, azh, azl, gxh, gxl, gyh, gyl, gzh, gzl, tph, tpl, mxl, mxh, myl, myh, mzl, mzh] =
             raw;
@@ -661,9 +661,9 @@ where
     }
 }
 
-impl<DEVICE, MAG> Icm20948<DEVICE, MAG>
+impl<TRANSPORT, MAG> Icm20948<TRANSPORT, MAG>
 where
-    DEVICE: RegisterDevice,
+    TRANSPORT: Icm20948Transport,
 {
     /// Takes 6 bytes converts them into a Vector3 of floats
     fn scaled_acc_from_bytes(&self, bytes: [u8; 6]) -> [f32; 3] {
@@ -681,13 +681,13 @@ where
     }
 
     /// Get array of unscaled accelerometer values
-    pub async fn read_acc_unscaled(&mut self) -> Result<[i16; 3], DEVICE::Error> {
+    pub async fn read_acc_unscaled(&mut self) -> Result<[i16; 3], TRANSPORT::Error> {
         let raw = self.read_from(Bank0::AccelXoutH).await?;
         Ok(collect_3xi16(raw))
     }
 
     /// Get array of scaled accelerometer values
-    pub async fn read_acc(&mut self) -> Result<[f32; 3], DEVICE::Error> {
+    pub async fn read_acc(&mut self) -> Result<[f32; 3], TRANSPORT::Error> {
         let acc = self
             .read_acc_unscaled()
             .await?
@@ -696,13 +696,13 @@ where
     }
 
     /// Get array of unscaled gyroscope values
-    pub async fn read_gyr_unscaled(&mut self) -> Result<[i16; 3], DEVICE::Error> {
+    pub async fn read_gyr_unscaled(&mut self) -> Result<[i16; 3], TRANSPORT::Error> {
         let raw = self.read_from(Bank0::GyroXoutH).await?;
         Ok(collect_3xi16(raw))
     }
 
     /// Get array of scaled gyroscope values
-    pub async fn read_gyr(&mut self) -> Result<[f32; 3], DEVICE::Error> {
+    pub async fn read_gyr(&mut self) -> Result<[f32; 3], TRANSPORT::Error> {
         let gyr = self
             .read_gyr_unscaled()
             .await?
@@ -711,7 +711,7 @@ where
     }
 
     /// Get scaled measurements for accelerometer and gyroscope, and temperature
-    pub async fn read_6dof(&mut self) -> Result<Data6Dof<f32>, DEVICE::Error> {
+    pub async fn read_6dof(&mut self) -> Result<Data6Dof<f32>, TRANSPORT::Error> {
         let raw: [u8; 14] = self.read_from(Bank0::AccelXoutH).await?;
         let [axh, axl, ayh, ayl, azh, azl, gxh, gxl, gyh, gyl, gzh, gzl, tph, tpl] = raw;
 
@@ -724,7 +724,7 @@ where
     }
 
     /// Get unscaled measurements for accelerometer and gyroscope, and temperature
-    pub async fn read_6dof_unscaled(&mut self) -> Result<Data6Dof<i16>, DEVICE::Error> {
+    pub async fn read_6dof_unscaled(&mut self) -> Result<Data6Dof<i16>, TRANSPORT::Error> {
         let raw: [u8; 14] = self.read_from(Bank0::AccelXoutH).await?;
         let [axh, axl, ayh, ayl, azh, azl, gxh, gxl, gyh, gyl, gzh, gzl, tph, tpl] = raw;
 
@@ -737,18 +737,18 @@ where
     }
 
     /// Set gyroscope calibration offsets by writing them to the IMU
-    pub async fn set_gyr_offsets(&mut self, offsets: [i16; 3]) -> Result<(), DEVICE::Error> {
+    pub async fn set_gyr_offsets(&mut self, offsets: [i16; 3]) -> Result<(), TRANSPORT::Error> {
         let [[xh, xl], [yh, yl], [zh, zl]]: [[u8; 2]; 3] = offsets.map(|x| (-x).to_be_bytes());
 
         self.set_user_bank::<Bank2>(false).await?;
 
-        self.device
+        self.transport
             .write_registers(Bank2::XgOffsH.addr(), &[xh, xl])
             .await?;
-        self.device
+        self.transport
             .write_registers(Bank2::YgOffsH.addr(), &[yh, yl])
             .await?;
-        self.device
+        self.transport
             .write_registers(Bank2::ZgOffsH.addr(), &[zh, zl])
             .await?;
 
@@ -756,18 +756,18 @@ where
     }
 
     /// Set accelerometer calibration offsets by writing them to the IMU
-    pub async fn set_acc_offsets(&mut self, offsets: [i16; 3]) -> Result<(), DEVICE::Error> {
+    pub async fn set_acc_offsets(&mut self, offsets: [i16; 3]) -> Result<(), TRANSPORT::Error> {
         let [[xh, xl], [yh, yl], [zh, zl]]: [[u8; 2]; 3] = offsets.map(|x| (-x).to_be_bytes());
 
         self.set_user_bank::<Bank1>(false).await?;
 
-        self.device
+        self.transport
             .write_registers(Bank1::XaOffsH.addr(), &[xh, xl])
             .await?;
-        self.device
+        self.transport
             .write_registers(Bank1::YaOffsH.addr(), &[yh, yl])
             .await?;
-        self.device
+        self.transport
             .write_registers(Bank1::ZaOffsH.addr(), &[zh, zl])
             .await?;
 
