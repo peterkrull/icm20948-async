@@ -63,7 +63,7 @@ pub struct I2cDevice<I2C> {
 }
 
 // Trait to allow for generic behavior across I2c or Spi usage
-pub trait Icm20948Transport {
+pub trait Transport {
     type Error: Into<SetupError<Self::Error>>;
     fn read_registers(
         &mut self,
@@ -78,7 +78,7 @@ pub trait Icm20948Transport {
 }
 
 // Implementation of transport trait for I2c
-impl<I2C: I2c> Icm20948Transport for I2cDevice<I2C> {
+impl<I2C: I2c> Transport for I2cDevice<I2C> {
     type Error = I2C::Error;
     async fn read_registers(&mut self, reg_addr: u8, read: &mut [u8]) -> Result<(), Self::Error> {
         let addr = self.address.get();
@@ -115,7 +115,7 @@ pub struct SpiDevice<SPI> {
 }
 
 // Implementation of transport trait for Spi
-impl<SPI: spi::SpiDevice> Icm20948Transport for SpiDevice<SPI> {
+impl<SPI: spi::SpiDevice> Transport for SpiDevice<SPI> {
     type Error = SPI::Error;
     async fn read_registers(&mut self, reg_addr: u8, read: &mut [u8]) -> Result<(), Self::Error> {
         self.inner
@@ -212,7 +212,7 @@ where
 
 impl<TRANPORT, DELAY> IcmBuilder<TRANPORT, DELAY>
 where
-    TRANPORT: Icm20948Transport,
+    TRANPORT: Transport,
     DELAY: DelayNs,
 {
     /// Set the whole IMU config at once
@@ -353,7 +353,7 @@ where
 
 impl<TRANSPORT, MAG> Icm20948<TRANSPORT, MAG>
 where
-    TRANSPORT: Icm20948Transport,
+    TRANSPORT: Transport,
 {
     /// Setup accelerometer and gyroscope according to config
     async fn setup_acc_gyr(
@@ -556,7 +556,7 @@ where
 
 impl<TRANSPORT> Icm20948<TRANSPORT, MagEnabled>
 where
-    TRANSPORT: Icm20948Transport,
+    TRANSPORT: Transport,
 {
     /// Setup magnetometer in continuous mode
     async fn setup_mag(
@@ -662,7 +662,7 @@ where
 
 impl<TRANSPORT, MAG> Icm20948<TRANSPORT, MAG>
 where
-    TRANSPORT: Icm20948Transport,
+    TRANSPORT: Transport,
 {
     /// Takes 6 bytes converts them into a Vector3 of floats
     fn scaled_acc_from_bytes(&self, bytes: [u8; 6]) -> [f32; 3] {
