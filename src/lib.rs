@@ -363,10 +363,8 @@ where
         // Ensure known-good state
         self.device_reset(delay).await?;
 
-        // Initially set user bank by force, and check identity
-        self.set_user_bank::<Bank0>(true).await?;
+        // Check the device identity
         let [imu_whoami] = self.read_from(Bank0::WhoAmI).await?;
-
         if imu_whoami != IMU_WHOAMI {
             return Err(SetupError::ImuWhoAmI(imu_whoami));
         }
@@ -392,6 +390,7 @@ where
     /// Reset accelerometer / gyroscope module
     pub async fn device_reset(&mut self, delay: &mut impl DelayNs) -> Result<(), TRANSPORT::Error> {
         delay.delay_ms(20).await;
+        self.set_user_bank::<Bank0>(true).await?; // Assume unknown state
         self.write_to_flag(Bank0::PwrMgmt1, 1 << 7, 1 << 7).await?;
         delay.delay_ms(50).await;
         Ok(())
