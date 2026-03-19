@@ -33,18 +33,18 @@ impl<E> From<E> for SetupError<E> {
     }
 }
 
+/// Container for accelerometer and gyroscope measurements
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-/// Container for accelerometer and gyroscope measurements
 pub struct Data6Dof<T> {
     pub acc: [T; 3],
     pub gyr: [T; 3],
     pub tmp: T,
 }
 
+/// Container for accelerometer, gyroscope and magnetometer measurements
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-/// Container for accelerometer, gyroscope and magnetometer measurements
 pub struct Data9Dof<T> {
     pub acc: [T; 3],
     pub gyr: [T; 3],
@@ -157,7 +157,7 @@ pub struct IcmBuilder<TRANSPORT, DELAY> {
 pub struct Icm20948<TRANSPORT, MAG> {
     transport: TRANSPORT,
     config: Config,
-    user_bank: UserBank,
+    user_bank: Option<UserBank>,
     mag_state: PhantomData<MAG>,
 }
 
@@ -324,7 +324,7 @@ where
         let mut imu = Icm20948 {
             transport: self.transport,
             config: self.config,
-            user_bank: UserBank::Bank0,
+            user_bank: None,
             mag_state: PhantomData,
         };
 
@@ -340,7 +340,7 @@ where
         let mut imu = Icm20948 {
             transport: self.transport,
             config: self.config,
-            user_bank: UserBank::Bank0,
+            user_bank: None,
             mag_state: PhantomData,
         };
 
@@ -389,10 +389,10 @@ where
 
     /// Reset accelerometer / gyroscope module
     pub async fn device_reset(&mut self, delay: &mut impl DelayNs) -> Result<(), TRANSPORT::Error> {
-        delay.delay_ms(20).await;
-        self.set_user_bank::<Bank0>(true).await?; // Assume unknown state
+        delay.delay_ms(10).await;
+        self.user_bank = None; // Assume unknown state
         self.write_to_flag(Bank0::PwrMgmt1, 1 << 7, 1 << 7).await?;
-        delay.delay_ms(50).await;
+        delay.delay_ms(10).await;
         Ok(())
     }
 
@@ -406,14 +406,14 @@ where
     async fn reset_i2c_master(&mut self) -> Result<(), TRANSPORT::Error> {
         self.write_to_flag(Bank0::UserCtrl, 1 << 1, 1 << 1).await
     }
-
+    
     /// Ensure correct user bank for given register
-    async fn set_user_bank<R: Register>(&mut self, force: bool) -> Result<(), TRANSPORT::Error> {
-        if (self.user_bank != R::bank()) || force {
+    async fn set_user_bank(&mut self, bank: UserBank) -> Result<(), TRANSPORT::Error> {
+        if self.user_bank != Some(bank) {
             self.transport
-                .write_registers(REG_BANK_SEL, &[(R::bank() as u8) << 4])
+                .write_registers(REG_BANK_SEL, &[(bank as u8) << 4])
                 .await?;
-            self.user_bank = R::bank();
+            self.user_bank = Some(bank);
         }
         Ok(())
     }
@@ -424,14 +424,14 @@ where
         reg: R,
     ) -> Result<[u8; N], TRANSPORT::Error> {
         let mut buf = [0u8; N];
-        self.set_user_bank::<R>(false).await?;
+        self.set_user_bank(R::bank()).await?;
         self.transport.read_registers(reg.addr(), &mut buf).await?;
         Ok(buf)
     }
 
     /// Write a single byte to the requeste register
     async fn write_to<R: Register>(&mut self, reg: R, data: u8) -> Result<(), TRANSPORT::Error> {
-        self.set_user_bank::<R>(false).await?;
+        self.set_user_bank(R::bank()).await?;
         self.transport.write_registers(reg.addr(), &[data]).await
     }
 
@@ -739,7 +739,7 @@ where
     pub async fn set_gyr_offsets(&mut self, offsets: [i16; 3]) -> Result<(), TRANSPORT::Error> {
         let [[xh, xl], [yh, yl], [zh, zl]]: [[u8; 2]; 3] = offsets.map(|x| (-x).to_be_bytes());
 
-        self.set_user_bank::<Bank2>(false).await?;
+        self.set_user_bank(UserBank::Bank2).await?;
 
         self.transport
             .write_registers(Bank2::XgOffsH.addr(), &[xh, xl])
@@ -758,7 +758,7 @@ where
     pub async fn set_acc_offsets(&mut self, offsets: [i16; 3]) -> Result<(), TRANSPORT::Error> {
         let [[xh, xl], [yh, yl], [zh, zl]]: [[u8; 2]; 3] = offsets.map(|x| (-x).to_be_bytes());
 
-        self.set_user_bank::<Bank1>(false).await?;
+        self.set_user_bank(UserBank::Bank1).await?;
 
         self.transport
             .write_registers(Bank1::XaOffsH.addr(), &[xh, xl])
